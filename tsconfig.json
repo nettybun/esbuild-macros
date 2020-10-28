@@ -3,7 +3,13 @@
     "target": "ESNext",
     "module": "ESNext",
     "moduleResolution": "Node",
-    "strict": true
+    "strict": true,
+    "baseUrl": ".",
+    "paths": {
+      "styletakeout.macro": [
+        "./macros/styletakeout.macro/styletakeout.macro.ts"
+      ]
+    }
   },
   "exclude": [
     "node_modules",

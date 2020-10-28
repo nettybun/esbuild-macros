@@ -1,0 +1,26 @@
+{
+  "name": "esbuild-macros",
+  "version": "0.0.0",
+  "description": "Macro example",
+  "main": "index.ts",
+  "type": "module",
+  "license": "MIT",
+  "author": "Gen Hames",
+  "repository": {
+    "type": "git",
+    "url": "https://gitlab.com/nthm/esbuild-macros"
+  },
+  "scripts": {
+    "build:esbuild": "esbuild --bundle index.ts --outfile=dist/build.js --external:esbuild --format=esm --platform=node",
+    "build:example": "node dist/build.js",
+    "build": "npm run build:esbuild && npm run build:example"
+  },
+  "devDependencies": {
+    "@typescript-eslint/eslint-plugin": "^4.6.0",
+    "@typescript-eslint/parser": "^4.6.0",
+    "esbuild": "^0.7.21",
+    "eslint": "^7.12.1",
+    "@types/node": "^14.14.5",
+    "typescript": "^4.0.5"
+  }
+}

@@ -13,6 +13,14 @@ import {
   macroSnippetsLookup
 } from './macroPlugin.js';
 
+// import styletakeoutMacro from 'esbuild-macros/styletakeout.macro';
+// import prevalMacro from 'esbuild-macros/preval.macro';
+// import stripIndentMacro from 'esbuild-macros/stripIndent.macro';
+// import msMacro from 'esbuild-macros/ms.macro';
+// import sqlMacro from 'esbuild-macros/sql.macro';
+// import jsonMacro from 'esbuild-macros/json.macro';
+// import yamlMacro from 'esbuild-macros/yaml.macro';
+
 (build as (options: BuildOptions) => Promise<BuildResult>)({
   // TODO: Process.argv
   entryPoints: ['macros/styletakeout.macro/example.ts'],
@@ -22,9 +30,26 @@ import {
   plugins: [
     macroPlugin,
   ],
-  // macros: [
-  //   'styletakeout.macro',
-  // ],
+  // macros: {
+  //   'styletakeout.macro': styletakeoutMacro({
+  //     importFile: './example/styletakeout.macro.ts',
+  //     outputFile: './dist/takeout.css',
+  //     verbose: true,
+  //     beautify: true,
+  //   }),
+  //   'preval.macro': prevalMacro({
+  //     verbose: true,
+  //   }),
+  //   'stripIndent.macro': stripIndentMacro(),
+  //   'ms.macro': msMacro(),
+  //   'sql.macro': sqlMacro(),
+  //   // I know esbuild has loaders for this, but not for subsets of JSON such
+  //   // as calling via `json('../huge.json', o => o.path.slice(0, 100);`
+  //   'json.macro': jsonMacro({
+  //     verbose: true,
+  //   }),
+  //   'yaml.macro': yamlMacro(),
+  // },
   jsxFactory: 'h',
   jsxFragment: 'h',
 })

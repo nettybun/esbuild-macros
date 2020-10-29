@@ -1,5 +1,14 @@
 // Macro Styles
 
+// This macro is specifically built for esbuild which supports tsconfig/jsconfig
+// path options. Therefore anyone, even JS-only users, should be able to use the
+// bare package-like import {...} from 'styletakeout.macro' and have type
+// correctly without errors. I need to double check non-TS though.
+
+// I'll have to throw an error if someone _doesn't_ override via tsconfig and
+// tell them that, unlike other macros, this one requires a local definition
+// file since you'll be using your own imports.
+
 /** Takeout css`` statement is replaced with a string of a unique classname */
 export declare function css(statics: TemplateStringsArray, ...variables: string[]): string;
 /** Takeout injectGlobal`` statement is removed entirely */
@@ -12,8 +21,10 @@ export type Colours =
   & { black: string, white: string }
   & { [colours in ColourNames]: { [level in Levels]: string } };
 
-// Having `as const` let's the editor display the value instead of "string"
-// Unfortunately that means this can't be typed as `Colours`
+// With `as const` the editor will display the value instead of "string".
+// Alternatively, you can not use it and just press Ctrl while hovering. Then
+// the editor will show the implementation preview. Unfortunately that means
+// this can't be typed as `Colours`
 export const colours = {
   black: '#000',
   white: '#fff',
@@ -151,18 +162,18 @@ export const sizes = {
   _64: '16rem',
 } as const;
 
-export const snippets = {
+export const classes = {
   text: {
-    xs:   'font-size: 0.75rem;',
-    sm:   'font-size: 0.875rem;',
-    md:   'font-size: 1rem;',
-    lg:   'font-size: 1.125rem;',
-    xl:   'font-size: 1.25rem;',
-    xl_2: 'font-size: 1.5rem;',
-    xl_3: 'font-size: 1.875rem;',
-    xl_4: 'font-size: 2.25rem;',
-    xl_5: 'font-size: 3rem;',
-    xl_6: 'font-size: 4rem;',
+    _0_xs: css`font-size: 0.75rem;`,
+    _1_sm: css`font-size: 0.875rem;`,
+    _2_md: css`font-size: 1rem;`,
+    _3_lg: css`font-size: 1.125rem;`,
+    _4_xl: css`font-size: 1.25rem;`,
+    _5_xl: css`font-size: 1.5rem;`,
+    _6_xl: css`font-size: 1.875rem;`,
+    _7_xl: css`font-size: 2.25rem;`,
+    _8_xl: css`font-size: 3rem;`,
+    _9_xl: css`font-size: 4rem;`,
   },
 } as const;
 
@@ -171,10 +182,17 @@ export const decl = {
   bodyBackground: '#eee',
   colour: colours,
   size: sizes,
-  snippet: snippets,
+  classes: classes,
 } as const;
 
-// TODO: Is there a way to autorun an injectGlobal here when Node loads this
-// file? This is looking like it'll replace .babelrc.json as a config file, so
-// having a way to inject _and_ define (in TS) global classes could replace the
-// need for inlined snippets
+// This file will be run automatically by the macro, meaning css`` and
+// injectGlobal`` are valid functions (the above fake "declare" functions are
+// removed) so you can use them here!
+
+injectGlobal`
+  body {
+    /* Styles */
+  }
+  /* Note that there's no reason to define classes here - put your classes in
+     the "classes" export above and you'll get type checking */
+`;

@@ -1,4 +1,4 @@
-import { decl, colours, css } from 'styletakeout.macro';
+import { decl, colours, css, classes } from 'styletakeout.macro';
 import { otherStyles } from './example-imported.js';
 
 /* eslint-disable @typescript-eslint/no-unused-vars */
@@ -16,7 +16,7 @@ console.log(styles);
 console.log(decl.pageBackground);
 console.log(otherStyles);
 
-`m5 p5 ${css`vertical-align: middle`} align-center ${styles}`;
+`m5 p5 ${css`vertical-align: middle`} align-center ${styles} ${classes.text._0_xs}`;
 `m5 p5 ${css`vertical-align: middle`} align-center`;
 `m5 p5 ${styles} ${css`vertical-align: middle`} align-center ${styles}`;
 `${styles} ${css`vertical-align: middle`}`;

@@ -5,9 +5,19 @@
     "moduleResolution": "Node",
     "strict": true,
     "baseUrl": ".",
+    // TODO: Key conflict I know I know
     "paths": {
       "styletakeout.macro": [
         "./macros/styletakeout.macro/styletakeout.macro.ts"
+      ]
+    },
+    "paths": {
+      // TODO: `import {} from 'macro:css';`? Nice to move away from Babel now
+      "styletakeout.macro": [
+        "examples/macros-regex/styletakeout.macro.js"
+      ],
+      "ms.macro": [
+        "examples/macros-regex/ms.macro.js"
       ]
     }
   },

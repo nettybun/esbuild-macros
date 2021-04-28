@@ -3,10 +3,10 @@ import { otherStyles } from './example-imported.js';
 
 /* eslint-disable @typescript-eslint/no-unused-vars */
 
-const exportedVariable = colours.blue._400;
+const exportedVariable = colours.blue._800;
 const styles = css`
   padding: 15px;
-  background-color: ${colours.blue._500};
+  background-color: ${colours.blue._700};
   margin-top: ${decl.size._05};
   margin-left: ${decl.size._04};
   margin-right: ${decl.size._03};

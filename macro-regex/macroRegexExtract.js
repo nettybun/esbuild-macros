@@ -16,26 +16,28 @@ import esbuild from 'esbuild';
 import * as styletakeoutmacro from './macros/styletakeout.macro.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const decoder = new TextDecoder();
 
 esbuild.build({
-  entryPoints: [path.join(__dirname, 'index.tsx')],
+  entryPoints: [path.join(__dirname, '../macros/styletakeout.macro/example.ts')],
   write: false,
   format: 'esm',
   external: [
-    '../src',
-    '../src/w',
     'styletakeout.macro',
   ],
   bundle: true,
+  // This isn't enough - it'll have MULTIPLE imports for the same macro...
+  minifyIdentifiers: true,
+  minifySyntax: true,
   minify: true,
 }).then(buildResult => {
   const [result] = buildResult.outputFiles;
-  let bundle = result.text;
+  let bundle = decoder.decode(result.contents);
+  fs.writeFile(path.join(__dirname, 'dist/in.js'), bundle);
   // Don't need to be ambiguous with '" and ;? because esbuild will normalize it
   const importMatch = bundle.match(/import{(.+?)}from"styletakeout.macro";/);
   if (!importMatch) {
     console.log('No macro to replace');
-    console.log(bundle);
     return;
   }
   const [full, capture] = importMatch;
@@ -56,25 +58,18 @@ esbuild.build({
   const regexMemberExpr = head => `([^\\w.])${head}\\.((?:\\w+\\.?)+)`;
   const regexTagTemplateExpr = head => `([^\\w.])${head}\`((?:[^\`\\\\]|\\\\.)*)\``;
 
-  const macros = ['decl', 'css', 'injectGlobal'];
-
-  const macroRegexTypes = {
-    decl: regexMemberExpr,
-    css: regexTagTemplateExpr,
-    injectGlobal: regexTagTemplateExpr,
-  };
-
-  // XXX: Using eval() feels wrong - this is the first time in my life doing it
-  const macroHandlers = {
-    decl: s => eval(`styletakeoutmacro.decl.${s}`),
-    css: s => eval(`styletakeoutmacro.css\`${s}\``),
-    injectGlobal: s => eval(`styletakeoutmacro.injectGlobal\`${s}\``),
-  };
+  // This is ordered. Process objects before css and injectGlobal functions
+  const macros = ['decl', 'colours', 'sizes', 'classes', 'css', 'injectGlobal'];
 
   for (const name of macros.filter(x => x in names)) {
+    const isTagTemplateFn = name === 'css' || name === 'injectGlobal';
     const alias = names[name];
     // This has state; exec keeps moving forward in while(); also 'g' is needed
-    const regex = new RegExp(macroRegexTypes[name](alias), 'g');
+    const regex = new RegExp((
+      isTagTemplateFn
+        ? regexTagTemplateExpr
+        : regexMemberExpr
+    )(alias), 'g');
     console.log(name, regex);
     bundle = bundle.replace(
       regex,
@@ -87,7 +82,9 @@ esbuild.build({
           groupDelimeter,
           groupContent,
         });
-        const macroResponse = macroHandlers[name](groupContent);
+        const macroResponse = isTagTemplateFn
+          ? eval(`styletakeoutmacro.${name}\`${groupContent}\``)
+          : eval(`styletakeoutmacro.${name}.${groupContent}`);
         if (typeof macroResponse !== 'string') {
           throw new Error(`Macro handler "${name}" returned "${macroResponse}" `
             + `when given "${groupContent}" which isn't a string.`);
@@ -102,8 +99,8 @@ esbuild.build({
         return groupDelimeter + `"${macroResponse}"`;
       });
   }
-  console.log(bundle);
-  return fs.writeFile(path.join(__dirname, 'out.css'), '');
+  fs.writeFile(path.join(__dirname, 'dist/out.js'), bundle);
+  fs.writeFile(path.join(__dirname, 'dist/out.css'), '');
 }).catch(err => {
   console.error(err);
   process.exit(1);

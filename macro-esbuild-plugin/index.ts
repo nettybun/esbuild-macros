@@ -23,7 +23,7 @@ import {
 
 (build as (options: BuildOptions) => Promise<BuildResult>)({
   // TODO: Process.argv
-  entryPoints: ['macros/styletakeout.macro/example.ts'],
+  entryPoints: ['../macros/styletakeout.macro/example.ts'],
   outfile: 'dist/styletakeout-example.js',
   bundle: true,
   format: 'esm',

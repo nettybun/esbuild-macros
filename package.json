@@ -10,6 +10,11 @@
     "type": "git",
     "url": "https://gitlab.com/nthm/esbuild-macros"
   },
+  "scripts": {
+    "run-macro-acorn-walk": "cd macro-acorn-walk && node --loader ts-node/esm index.ts",
+    "run-macro-esbuild-plugin": "cd macro-esbuild-plugin && esbuild --bundle index.ts --outfile=dist/build.js --external:esbuild --format=esm --platform=node && node dist/build.js",
+    "run-macro-regex": "cd macro-regex && node macroRegexExtract.js"
+  },
   "devDependencies": {
     "@types/node": "^15.0.1",
     "@typescript-eslint/eslint-plugin": "^4.22.0",
@@ -18,6 +23,7 @@
     "acorn-walk": "^8.1.0",
     "esbuild": "^0.11.15",
     "eslint": "^7.25.0",
+    "ts-node": "^9.1.1",
     "typescript": "^4.2.4"
   }
 }

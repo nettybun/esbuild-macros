@@ -18,13 +18,32 @@ import * as styletakeoutmacro from './macros/styletakeout.macro.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const decoder = new TextDecoder();
 
+// This is ordered. Process objects before css and injectGlobal functions
+// TODO: Move this into macro-specific work in ./macros/
+const macros = ['decl', 'colours', 'sizes', 'classes', 'css', 'injectGlobal'];
+const macroShim = macros.map(k => `export const ${k} = $_MACRO.${k}`).join('\n');
+
 esbuild.build({
   entryPoints: [path.join(__dirname, '../macros/styletakeout.macro/example.ts')],
   write: false,
   format: 'esm',
-  external: [
-    'styletakeout.macro',
-  ],
+  // plugins: [
+  //   (plugin) => {
+  //     plugin.setName('external-macro-merge');
+  //     plugin.addResolver({ filter: /\.macro$/ }, args => {
+  //       console.log('esbuild-macro-resolver', args);
+  //       return { path: args.path, namespace: 'macro-ns' };
+  //     });
+  //     plugin.addLoader({ filter: /.*/, namespace: 'macro-ns' }, (args) => {
+  //       console.log('esbuild-macro-load', args);
+  //       return {
+  //         contents: macroShim,
+  //         loader: 'js',
+  //       };
+  //     });
+  //   },
+  // ],
+  external: ['styletakeout.macro'],
   bundle: true,
   minify: true,
 }).then(buildResult => {
@@ -54,9 +73,6 @@ esbuild.build({
   // I'll regex out its object chain...
   const regexMemberExpr = head => `([^\\w.])${head}\\.((?:\\w+\\.?)+)`;
   const regexTagTemplateExpr = head => `([^\\w.])${head}\`((?:[^\`\\\\]|\\\\.)*)\``;
-
-  // This is ordered. Process objects before css and injectGlobal functions
-  const macros = ['decl', 'colours', 'sizes', 'classes', 'css', 'injectGlobal'];
 
   for (const name of macros.filter(x => x in names)) {
     const isTagTemplateFn = name === 'css' || name === 'injectGlobal';

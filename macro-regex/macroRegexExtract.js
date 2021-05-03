@@ -7,12 +7,14 @@
 // esbuild to do AST work on a macro's behave... Unfortunately `define` doesn't
 // operate on imports ://
 
+/* eslint-disable no-unused-vars */
+
 import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import esbuild from 'esbuild';
 
-// eslint-disable-next-line no-unused-vars
+// This is used in eval() later on to do actual macro-defined work
 import * as styletakeoutmacro from './macros/styletakeout.macro.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -50,23 +52,34 @@ esbuild.build({
   const [result] = buildResult.outputFiles;
   let bundle = decoder.decode(result.contents);
   fs.writeFile(path.join(__dirname, 'dist/in.js'), bundle);
+
+  // TODO: Generalize to more than only styletakeout.macro
+  const names = {};
+  let importMatch;
   // Don't need to be ambiguous with '" and ;? because esbuild will normalize it
-  const importMatch = bundle.match(/import{(.+?)}from"styletakeout.macro";/);
-  if (!importMatch) {
+  while ((importMatch = bundle.match(/import{(.+?)}from"styletakeout.macro";/))) {
+    const [full, capture] = importMatch;
+    const idxStart = importMatch.index;
+    const idxEnd = idxStart + full.length;
+    console.log(`Import ${idxStart}->${idxEnd}: "${full}"`);
+    // Remove import statement
+    bundle = bundle.slice(0, idxStart) + bundle.slice(idxEnd);
+    for (const importExpr of capture.split(',')) {
+      // Safe even if not aliased/minified
+      const [exportN, aliasN = exportN] = importExpr.split(' as ');
+      if (!(exportN in names)) {
+        names[exportN] = [];
+      }
+      if (!names[exportN].includes(aliasN)) {
+        names[exportN].push(aliasN);
+      }
+    }
+  }
+  if (!Object.keys(names).length) {
     console.log('No macro to replace');
     return;
   }
-  const [full, capture] = importMatch;
-  const idxStart = importMatch.index;
-  const idxEnd = idxStart + full.length;
-  // Remove import statement
-  bundle = bundle.slice(0, idxStart) + bundle.slice(idxEnd);
-  const names = {};
-  for (const importExpr of capture.split(',')) {
-    // Safe even if not aliased/minified
-    const [exportN, aliasN = exportN] = importExpr.split(' as ');
-    names[exportN] = aliasN;
-  }
+
   // There are 3 imports; decl, css, and injectGlobal. I don't actually need to
   // touch the decl import for ${} in css and injectGlobal because eval could
   // handle it, but I need to handle it for global variable declaration? So.
@@ -76,13 +89,13 @@ esbuild.build({
 
   for (const name of macros.filter(x => x in names)) {
     const isTagTemplateFn = name === 'css' || name === 'injectGlobal';
-    const alias = names[name];
+    const aliases = names[name];
     // This has state; exec keeps moving forward in while(); also 'g' is needed
     const regex = new RegExp((
       isTagTemplateFn
         ? regexTagTemplateExpr
         : regexMemberExpr
-    )(alias), 'g');
+    )(`(?:${aliases.join('|')})`), 'g');
     console.log(name, regex);
     bundle = bundle.replace(
       regex,

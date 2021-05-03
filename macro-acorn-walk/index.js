@@ -1,5 +1,5 @@
-import acorn from 'acorn';
-import walk from 'acorn-walk';
+import * as acorn from 'acorn';
+import * as walk from 'acorn-walk';
 
 // From collecting all types in a Set() via walk.full(ast, node => ...)
 // 'BinaryExpression'
@@ -66,7 +66,7 @@ const macroLocalsToSpecifiers = {};
 // TODO: https://github.com/acornjs/acorn/issues/946
 walk.ancestor(ast, {
   ImportDeclaration(node) {
-    console.log(`Import ${node.start}->${node.end}`);
+    console.log(`Found import statement ${node.start}->${node.end}`);
     const sourceName = node.source.value;
     node.specifiers.forEach(n => {
       const specImportMap = macroSpecifiersToLocals[sourceName] || (macroSpecifiersToLocals[sourceName] = {});
@@ -84,8 +84,10 @@ walk.ancestor(ast, {
     console.log('Identifier', node.name);
     const meta = macroLocalsToSpecifiers[node.name];
     if (!meta) return;
-    console.log('Identifier', node.name, meta.source, meta.specifier);
-    ancestors.forEach(n => console.log('Ancestor:', n.type, n.name));
+    console.log('Identifier matches', meta.source, meta.specifier);
+    ancestors.forEach((n, i) => {
+      console.log(`  - ${'  '.repeat(i)}${n.type} ${n.name || ''}`);
+    });
   },
 });
 

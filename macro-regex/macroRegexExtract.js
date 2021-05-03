@@ -26,9 +26,6 @@ esbuild.build({
     'styletakeout.macro',
   ],
   bundle: true,
-  // This isn't enough - it'll have MULTIPLE imports for the same macro...
-  minifyIdentifiers: true,
-  minifySyntax: true,
   minify: true,
 }).then(buildResult => {
   const [result] = buildResult.outputFiles;

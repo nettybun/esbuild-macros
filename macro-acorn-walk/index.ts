@@ -31,38 +31,42 @@ type KnownNodeTypes =
 // output directly as a string.
 
 const bundle = `
-// ../macros/styletakeout.macro/example.ts
-import {decl as i, colours as s, css as e, classes as n} from "styletakeout.macro";
+// macros/styletakeout.macro/example.ts
+import{decl as l,colours as i,css as e,classes as a}from"styletakeout.macro";
 
-// ../macros/styletakeout.macro/example-imported.ts
-import {decl as o, sizes as a, css as r} from "styletakeout.macro";
-const m = a._04, t = r\`
-  padding: \${o.size._05};
-\`
-
-// ../macros/styletakeout.macro/example.ts
-, $ = s.blue._400, l = e\`
-  padding: 15px;
-  background-color: \${s.blue._500};
-  margin-top: \${i.size._05};
-  margin-left: \${i.size._04};
-  margin-right: \${i.size._03};
+// macros/styletakeout.macro/example-imported.ts
+import{decl as s,sizes as r,css as c}from"styletakeout.macro";
+var p = r._04,
+t = c\`
+  padding: \${s.size._05};
 \`;
-console.log(l);
-console.log(i.pageBackground);
+
+// macros/styletakeout.macro/example.ts
+var u = i.blue._800,
+o = e\`
+  padding: 15px;
+  background-color: \${i.blue._700};
+  margin-top: \${l.size._05};
+  margin-left: \${l.size._04};
+  margin-right: \${l.size._03};
+\`;
+function d(n){return n+10}
+console.log(d(10));
+console.log(o);
+console.log(l.pageBackground);
 console.log(t);
-"" + e\`vertical-align: middle\` + l + n.text._0_xs;
-"" + e\`vertical-align: middle\`;
-"" + l + e\`vertical-align: middle\` + l;
-"" + l + e\`vertical-align: middle\`;
-"" + e\`vertical-align: middle\`;
-"" + e\`vertical-align: middle\`;
+var _ = \`m5 p5 \${e\`vertical-align: middle\`} align-center \${o} \${a.text._0_xs}\`,
+x = \`m5 p5 \${e\`vertical-align: middle\`} align-center\`,
+b = \`m5 p5 \${o} \${e\`vertical-align: middle\`} align-center \${o}\`,
+f = \`\${o} \${e\`vertical-align: middle\`}\`,
+h = \`\${e\`vertical-align: middle\`}\`,
+y = \`\${e\`vertical-align: middle\`} hello\`;
 `.trim();
 
 const ast = acorn.parse(bundle, {
   ecmaVersion: 2020,
   sourceType: 'module',
-  // This is actually the line/column. I only care about the start/end indices.
+  // Controls line/column but I only need start/end indices so no thanks
   // locations: true,
 });
 

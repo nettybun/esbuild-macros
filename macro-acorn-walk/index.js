@@ -50,13 +50,32 @@ h = \`\${e\`vertical-align: middle\`}\`,
 y = \`\${e\`vertical-align: middle\`} hello\`;
 `.trim();
 
+// These are the imports? Maybe? Unless I import the whole file...
+// If I'm going the eval() route then importing it makes sense. Unfortunately
+// this is an issue for TypeScript and transpilation.
+const styletakeout = {
+  value: 2021,
+  decl: {
+    background: '#FFF',
+    colour: styletakeout.colours,
+  },
+  colours: {
+    grey: '#CCC',
+    black: '#000',
+  },
+  classes: {
+    center: styletakeout.css`text-align: center;`,
+  },
+  css() {},
+  injectGlobal() {},
+};
+
 const ast = acorn.parse(bundle, {
   ecmaVersion: 2020,
   sourceType: 'module',
   // Controls line/column but I only need start/end indices so no thanks
   // locations: true,
 });
-
 
 // { "styletakeout.macro": { "decl": ["a1", "d"], "css": ["c", "c1"] }, ... }
 const macroSpecifiersToLocals = {};
@@ -68,11 +87,42 @@ const macroDefinitions = {
     // TODO: These will need to be defined as eval-able objects/functions or at
     // least be able to be processed in an arbitrary order such as a css``
     // noticing it has a decl inside of it but that decl has not yet been hit.
-    if (['decl', 'colours', 'sizes', 'classes'].includes(specifier)) {
-      return;
-    }
     if (['css', 'injectGlobal'].includes(specifier)) {
-      return;
+      // TODO: This is always true? Because "Program"
+      if (ancestors.length < 2) {
+        throw 'Macros css and injectGlobal must be called as tag template functions';
+      }
+      const self = ancestors[ancestors.length - 1];
+      const parent = ancestors[ancestors.length - 2];
+      const errorLoc = `${specifier}@${self.start}->${self.end}`;
+      if (parent.type !== 'TaggedTemplateExpression') {
+        throw 'Macros css and injectGlobal must be called as tag template functions';
+      }
+      // No just run?
+      // const { expressions, quasis } = parent.quasi;
+      // Not run...check the statements for validity? Like individually eval
+      // each quasis? They have a start/end. I can eval them...
+      const { start, end } = parent.quasi;
+      let ret;
+      try {
+        ret = eval(bundle.slice(start, end));
+      } catch (err) {
+        throw `Macro ${errorLoc}: ${err}`;
+      }
+      if (typeof ret !== 'string') {
+        throw `Macro ${errorLoc} eval returned type ${typeof ret} instead of a string`;
+      }
+      return ret;
+    } else if (specifier in styletakeout) {
+      // It's a decl, colours, etc. Possibly a single value...like a number?
+      // Dropping in the value should work? Like `{ ... }.colours.background`.
+      // Then also for `5.colours` it'll throw. How to know the boundary index
+      // values? Look up but by how much...
+
+      // If it's a unary, binary, expression, those are fine. If it's a function
+      // parameter that's not fine? Same with a class? Ugh. Do I need to check
+      // all?
+      styletakeout[specifier];
     }
     throw new Error(`Unknown import "${specifier}" for styletakeout.macro`);
   },

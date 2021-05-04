@@ -63,11 +63,27 @@ const macroSpecifiersToLocals = {};
 // { "a1": { "source": "styletakeout.macro", "specifier": "decl" }, ... }
 const macroLocalsToSpecifiers = {};
 
+const macroDefinitions = {
+  'styletakeout.macro': (specifier, ancestors) => {
+    // TODO: These will need to be defined as eval-able objects/functions or at
+    // least be able to be processed in an arbitrary order such as a css``
+    // noticing it has a decl inside of it but that decl has not yet been hit.
+    if (['decl', 'colours', 'sizes', 'classes'].includes(specifier)) {
+      return;
+    }
+    if (['css', 'injectGlobal'].includes(specifier)) {
+      return;
+    }
+    throw new Error(`Unknown import "${specifier}" for styletakeout.macro`);
+  },
+};
+
 // TODO: https://github.com/acornjs/acorn/issues/946
 walk.ancestor(ast, {
   ImportDeclaration(node) {
     console.log(`Found import statement ${node.start}->${node.end}`);
     const sourceName = node.source.value;
+    if (!sourceName.endsWith('.macro')) return;
     node.specifiers.forEach(n => {
       const specImportMap = macroSpecifiersToLocals[sourceName] || (macroSpecifiersToLocals[sourceName] = {});
       const specLocals = specImportMap[n.imported.name] || (specImportMap[n.imported.name] = []);
@@ -86,8 +102,53 @@ walk.ancestor(ast, {
     if (!meta) return;
     console.log('Identifier matches', meta.source, meta.specifier);
     ancestors.forEach((n, i) => {
-      console.log(`  - ${'  '.repeat(i)}${n.type} ${n.name || ''}`);
+      console.log(`  - ${'  '.repeat(i)}${n.type}:${JSON.stringify(n)}`);
     });
+    // TODO: Actually do the replacement now by adding to a replace-queue:
+    // { start: 103, end: 144, content: '...' } | undefined
+    const diff = macroDefinitions[meta.source](meta.specifier, ancestors);
+    // Later I'll do a topological sort maybe? How to reconcile nested changes?
+    // Does modifying the AST reflect in later things? I think so?
+
+    // Decl/Colours/Etc can look up, if it's in template string, then if it's
+    // the only thing in the quasis expression then remove the expression (which
+    // joins the neighbouring strings) and if there are no quasis anymore and
+    // it's not a tag template then convert it to a normal string
+
+    // But I'm not serializing the AST...
+
+    // The AST actually encounters the css`` before the ${decl.x.y} inside of it
+    // so I need to...look down? Not only up? Yeah. That's...simpler?
+
+    // That means I _don't_ do decl's first anymore (!!!) I do it in the order
+    // of the AST. So I get a css``, I read its tag, covers two decl`s, then
+    // return, then encounter those two decl's next - I'll have known that I've
+    // seen these based on their start/end indices. I basically skip until I'm
+    // beyond a certain "cursor". This is also handy because looking down means
+    // I can detect css`` inside css`` (which is illegal; says me).
+
+    // Either that or... I use the start/end to take css`...` out in its
+    // entirety and eval() it. Spicy. Yeah. Huh. Don't walk that AST unless I
+    // need to I guess...
+
+    // Oh.
+
+    // I don't need walk.ancestor? Because I look down, not up... and I eval. Is
+    // that real hot girl shit?...No. No it's not. I _do_ need ancestor because
+    // decl/css/etc still needs to look up to see if they're in a template
+    // string expression and try to clean it up. Thankfully now I'm not cleaning
+    // up css`...` strings, only `m5 ${css`...`} p5 ${decl.x}` strings...
+
+    // That will use a template-queue for patches...patch to `m5 #HASH p5 ${}`
+    // then later decl will see its also in a template string, check the queue-
+    // Uh. No. Bad.
+
+    // No it's less work to invoke a moment at the moment of noticing that css``
+    // is in a template string expression: move up and process all quasis: this
+    // will add the full start/end of the string to the replace-queue which is
+    // already a handled use case. Good.
+
+    // Ok that handles the topo sort issue and macro ordering _I think_ 🤞🤞
   },
 });
 

@@ -35,12 +35,7 @@
           }
         ],
         "@typescript-eslint/no-namespace": "off",
-        "@typescript-eslint/no-unused-vars": [
-          "error",
-          {
-            "argsIgnorePattern": "^_"
-          }
-        ],
+        "@typescript-eslint/no-unused-vars": "off",
         "@typescript-eslint/no-unnecessary-condition": [
           "error",
           {
@@ -118,13 +113,7 @@
     ],
     "no-tabs": "error",
     "no-trailing-spaces": "error",
-    // Switch this as needed, otherwise too much noise
-    "no-unused-vars": [
-      "error",
-      {
-        "argsIgnorePattern": "^_"
-      }
-    ],
+    "no-unused-vars": "off",
     "no-useless-concat": "error",
     "object-curly-spacing": [
       "error",

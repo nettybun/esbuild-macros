@@ -1,6 +1,17 @@
-# Simulating babel-macros in esbuild
+# Using Babel-Macros without Babel
 
-**Latest attempt is at _macro-regex/macroRegexExtract.js_**
+**Latest attempt is at **./macro-acorn-walk**
+
+This started as an attempt to port babel-macros to esbuild, but after a few
+different attempts I'm now using Acorn to parse a bundle into an AST and doing
+tricky find-and-replace using the location indices. It's a single AST pass and
+there's no serializaton - only slicing of the original JS code string.
+
+The idea is to use esbuild to bundle everything and transpile JSX/TS but leave
+macros as "external". Then replace the macros in the bundle using Acorn. Lastly
+I'll have to patch the source map using magicstring (see notes.md).
+
+## Theory of macros and how they intersect with esbuild
 
 There's no AST API for esbuild, so trying to replace the macro code is either
 via reparsing the AST (i.e Babel) or doing using regexes. **Most macros will
@@ -10,9 +21,11 @@ I figured this wasn't complex enough to require AST operations. Is it possible
 to take out CSS via `` css`...` `` tag template extraction?
 
 There are plugins for esbuild, but to support macros means an `fs.readFile` on
-every single file to see if it has an import... That's not great.
+every single file to see if it has an import... That's not great. How expensive
+is an AST parse? How efficient can replacing macros be without getting in
+esbuild's way (interrupting parallelism by using plugins etc).
 
-## Goal: Natively/Efficiently support macros in esbuild
+## Does natively including macro support in esbuild make sense?
 
 If a general purpose algorithm for doing extraction and replacement of macros
 could be realized as a proof-of-concept (in JS via regex) then it could marketed
@@ -22,16 +35,19 @@ have all "snippets" evaluated and dropped into the final bundle. That way,
 unlike plugins which have to make one Node/Go call per file, a macro would make
 only one (1) call.
 
-Originally I wrote _macroPlugin.ts_ as an attempt to work as an esbuild plugin
-that extracts the macros per-file on import. It was to see if I could replace
-macros "generally" via regex. It looked for function calls, tag templates, and
-dot-notation of objects (see regex).
+Originally I wrote _./macro-esbuild-plugin_ as an attempt to work as an esbuild
+plugin that extracts the macros per-file on import. It was to see if I could
+replace macros "generally" via regex. It looked for function calls, tag
+templates, and dot-notation of objects (see regex).
 
 It worked for my case, in _macros/styletakeout.macro/example.ts_, but I got hung
 up on the usecases beyond CSS-in-JS (notice how this repo references a handful
 of macros that I was trying to convince myself with...).
 
-## General case for extracting macros
+I'm not sure if there's a sufficient usecase to warrant a PoC/PR into esbuild
+itself. It's _more_ complicated than the existing plugin architecture.
+
+## Is there a general case for extracting macros?
 
 Macros have so many applications, right? Well. Macro authors can go wild with
 the AST operations, and that kind of API will never be part of esbuild. Is there
@@ -57,32 +73,40 @@ database model `import { Articles } ...` and does chaining with it:
 an AST. In Babel that's fine, walk the entire AST, but in esbuild *at most* it
 will be passing a substring of code...
 
-There's no "general purpose" macro extraction.
+There's no "general purpose" macro extraction with regexes alone, but there's
+room between blind regexing and full AST manipulation/serialization - I can use
+an AST to provide location indices (starts/ends of JS syntax) to not be so blind
+in regex replacements, then find-and-replace sections of the JS code string
+without involving the AST.
 
-## Regex macros
+## Regex-only macros
 
 It's not good to try and support all macros this way, but, there are some simple
-macros which might be able to work well with regexes.
+macros which might be able to work well with regexes alone.
 
 Isn't it too easy to trip up any kind of regex-based extraction method? Yes and
 that's what parsers are for, but specifically for the case of tag templates with
 very basic interpolation support that disallows nesting, it works.
 
-If I have to do regex work then doing it on the bundle from esbuild is much
+If I have to do regex-only work then doing it on the bundle from esbuild is much
 easier than doing per-file preprocessing which would need to support flexible
 code styles (aka linting) and detect broken JS. Working after esbuild also means
 the code is already validated and normalized. Yes, the macro code string might
 still be broken, but that's per-macro: i.e CSS-in-JS macro would use Stylis' to
 parse CSS. Lastly, there's also only one (1) import for the macro (its marked as
-external in esbuild).
+external in esbuild). (Edit: Sorry that's not true
+https://github.com/evanw/esbuild/issues/475)
 
-## CSS-in-JS
+I want it to not be fragile though, so supporting nesting and complex
+interpolation is a must. I can do that with an AST and `eval()`...
+
+### Regex-only CSS-in-JS
 
 For CSS tag templates, aside from nesting `${...}`, I think the only case of "`"
 is escaped \` in `` css`content: 'abc\`ohno\`xyz';`. ``. Thankfully there's a
 regex to handle that. Hmm `` css`...${`...`}...`. `` will break too. (TODO?)
 
-### Detecting a failed/partial extraction using `eval()`
+### Regex-only failed/partial extraction detection using `eval()`
 
 You can't just count "{" and "}" characters, and I don't want to write a parser,
 but y'know who has a fast parser? JS runtimes. If you `eval()` it in Node with a
@@ -120,8 +144,14 @@ file and is very bad.
 I don't want to do #2 prematurely so I'll assume esbuild doesn't reuse
 identifiers and try #1.
 
-### WIP
+Update (months later): It seems esbuild _never_ reuses variables which is very
+nice. I'll have to ask Evan if this can be relied upon. It lets me do a single
+AST pass in Acorn instead of needing to do one sweep just to get identifiers and
+determine who shadows who.
 
-This is working as a post-bundle regex replace in _macroRegexExtract.js_. Right
-now it's executing esbuild but could be ported to be a general tool to run on
-any file.
+## AST+Regex macros
+
+This is the current attempt, and is in _./macro-acorn-walk_. I'll likely publish
+it similar to "acorn-globals" which is a generic string-in-string-out npm
+package for detecting global variables from a JS code string. This is
+independent of any other tools/bundlers.

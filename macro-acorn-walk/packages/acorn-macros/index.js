@@ -1,5 +1,6 @@
 // Provides replaceMacros()
 
+import acorn from 'acorn';
 import * as walk from 'acorn-walk';
 
 // PLAN: Walk the AST and remove all imports to collect specifiers. For each
@@ -20,88 +21,100 @@ import * as walk from 'acorn-walk';
 // range and its content. Note that you can't have partial overlap; it's either
 // no overlap or the incoming changeset will be larger and replace the existing
 // (assert this and throw an error overwise). When you're about to eval a range
-// you ask "does anything in this range need to be replaced?" No? Then eval it
-// and add a new no-overlap changeset to the table. Yes? Load the changeset from
-// the table, replace the are of the range with it, and replace the entry in the
-// table (widening the ranges of course (assert this)). By the time we're fully
-// done walking the AST we'll have entries in the table that will be directly
-// replaced into the final source code. 🤞🤞
+// you ask "does anything in this range need to be replaced before the eval?"
+// No? Then eval it and add a new no-overlap changeset to the table. Yes? Load
+// the changeset from the table, replace the are of the range with it, and
+// replace the entry in the table (widening the ranges of course (assert this)).
+// By the time we're fully done walking the AST we'll have entries in the table
+// that will be directly replaced into the final source code. 🤞🤞
 
-// { "styletakeout.macro": { "decl": ["a1", "d"], "css": ["c", "c1"] }, ... }
-const macroSpecifiersToLocals = {};
-// { "a1": { "source": "styletakeout.macro", "specifier": "decl" }, ... }
-const macroLocalsToSpecifiers = {};
-// Per-macro functions which receive one of their specifiers and its AST
-// identifier ancestor list to return an index range that will be eval'd
-const macroDefinitions = {};
+const replaceMacros = (sourcecode, macros) => {
+  const macroSpecifiersToLocals = {
+    // "styletakeout.macro": { "decl": ["a1", "d"], "css": ["c", "c1"] }, ...
+  };
+  const macroLocalsToSpecifiers = {
+    // "a1": { "source": "styletakeout.macro", "specifier": "decl" }, ...
+  };
 
-// This is per ECMAScript spec but not enforced by Acorn.
-let seenIndentifier = false;
-// TODO: Add types https://github.com/acornjs/acorn/issues/946
-/** @type {walk.AncestorVisitors<{}>} */
-const visitors = {
-  ImportDeclaration(node) {
-    if (seenIndentifier) {
-      throw new Error('Can\'t declare an import after an identifier');
-    }
-    console.log(`Found import statement ${node.start}->${node.end}`);
-    const sourceName = node.source.value;
-    if (!sourceName.endsWith('.macro')) return;
-    node.specifiers.forEach(n => {
-      const specImportMap = macroSpecifiersToLocals[sourceName] || (macroSpecifiersToLocals[sourceName] = {});
-      const specLocals = specImportMap[n.imported.name] || (specImportMap[n.imported.name] = []);
-      if (!specLocals.includes(n.local.name)) {
-        specLocals.push(n.local.name);
-        macroLocalsToSpecifiers[n.local.name] = {
-          source: sourceName,
-          specifier: n.imported.name,
-        };
-      }
-    });
-  },
-  Identifier(node, state, ancestors) {
-    seenIndentifier = true;
-    console.log('Identifier', node.name);
-    const meta = macroLocalsToSpecifiers[node.name];
-    if (!meta) return;
-    console.log('Identifier matches', meta.source, meta.specifier);
-    ancestors.forEach((n, i) => {
-      console.log(`  - ${'  '.repeat(i)}${n.type}:${JSON.stringify(n)}`);
-    });
-    const changeset = macroDefinitions[meta.source](meta.specifier, ancestors);
-    // TODO: Add the changeset to the known-replacement table
-    const errorLoc = `${meta.specifier}@${node.start}->${node.end}`;
-    const [start, end] = changeset;
-    let ret;
-    try {
-      ret = eval(bundle.slice(start, end));
-    } catch (err) {
-      throw `Macro ${errorLoc}: ${err}`;
-    }
-    if (typeof ret !== 'string') {
-      throw `Macro ${errorLoc} eval returned type ${typeof ret} instead of a string`;
-    }
-    // TODO: Put it back into the known-replacements table...
-  },
-};
+  // Per-macro functions which receive one of their specifiers and its AST
+  // identifier ancestor list to return an index range that will be eval'd
+  const macroDefinitions = {};
 
-const replaceMacros = (bundle, macros) => {
+  // Replacements made throughout the AST walk. No partial overlaps. Fully
+  // covering a range replaces the range with the wider range.
+  const rangeReplacements = {};
+
   // Macros will just be a function I guess ^-^
   // (specifier:string, ancestors:acorn.Node[]) => [start:number, end:number]
   macros.forEach(macro => {
     macroDefinitions[macro.name] = macro;
   });
-  // TODO: Parse bundle into an AST or accept a pre-parsed AST.
-  const ast = {};
-  walk.ancestor(ast, visitors);
+
+  const ast = typeof sourcecode === 'string'
+    ? acorn.parse(sourcecode, { ecmaVersion: 2020 })
+    : sourcecode;
+  if (!ast || ast.type !== 'Program') {
+    throw new Error('Provided sourcecode must JS code string or an Acorn AST');
+  }
+
+  // This is per ECMAScript spec but not enforced by Acorn.
+  let seenIndentifier = false;
+  // TODO: Add types https://github.com/acornjs/acorn/issues/946
+  walk.ancestor(ast, {
+    ImportDeclaration(node) {
+      if (seenIndentifier) {
+        throw new Error('Can\'t declare an import after an identifier');
+      }
+      console.log(`Found import statement ${node.start}->${node.end}`);
+      const sourceName = node.source.value;
+      if (!sourceName.endsWith('.macro')) return;
+      node.specifiers.forEach(n => {
+        const specImportMap = macroSpecifiersToLocals[sourceName] || (macroSpecifiersToLocals[sourceName] = {});
+        const specLocals = specImportMap[n.imported.name] || (specImportMap[n.imported.name] = []);
+        if (!specLocals.includes(n.local.name)) {
+          specLocals.push(n.local.name);
+          macroLocalsToSpecifiers[n.local.name] = {
+            source: sourceName,
+            specifier: n.imported.name,
+          };
+        }
+      });
+    },
+    Identifier(node, state, ancestors) {
+      seenIndentifier = true;
+      console.log('Identifier', node.name);
+      const meta = macroLocalsToSpecifiers[node.name];
+      if (!meta) return;
+      console.log('Identifier matches', meta.source, meta.specifier);
+      ancestors.forEach((n, i) => {
+        console.log(`  - ${'  '.repeat(i)}${n.type}:${JSON.stringify(n)}`);
+      });
+      const changeset = macroDefinitions[meta.source](meta.specifier, ancestors);
+      const [start, end] = changeset;
+      // TODO: Add the changeset to the known-replacement table
+      rangeReplacements[''] = ''; //???
+
+      const errorLoc = `${meta.specifier}@${node.start}->${node.end}`;
+      let ret;
+      try {
+        ret = eval(sourcecode.slice(start, end));
+      } catch (err) {
+        throw `Macro ${errorLoc}: ${err}`;
+      }
+      if (typeof ret !== 'string') {
+        throw `Macro ${errorLoc} eval returned type ${typeof ret} instead of a string`;
+      }
+      // TODO: Put it back into the known-replacements table...
+    },
+  });
   console.log('macroSpecifiersToLocals', macroSpecifiersToLocals);
   console.log('macroLocalsToSpecifiers', macroLocalsToSpecifiers);
 
   // TODO: Use the remaining known-replacements table entries to return the new
-  // macro-free bundle
+  // macro-free source
 
   // TODO: Final replacements...
-  return bundle;
+  return sourcecode;
 };
 
 

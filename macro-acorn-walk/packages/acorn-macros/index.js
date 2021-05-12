@@ -2,7 +2,10 @@
 
 import acorn from 'acorn';
 import * as walk from 'acorn-walk';
-import { ranges, insertRange } from './rangeList.js';
+import { rangeList, insertRange, queryRangesBetween } from './rangeList.js';
+
+/** @typedef {import('./rangeList').Range} Range */
+/** @typedef {(specifier:string, ancestors:acorn.Node[]) => [start:number, end:number]} MacroFunctions */
 
 /*
 PLAN:
@@ -41,6 +44,7 @@ PLAN:
     table that will be directly replaced into the final source code. 🤞🤞
 */
 
+/** @param {string} sourcecode; @param {MacroFunctions[]} macros */
 const replaceMacros = (sourcecode, macros) => {
   const macroSpecifiersToLocals = {
     // "styletakeout.macro": { "decl": ["a1", "d"], "css": ["c", "c1"] }, ...
@@ -55,17 +59,51 @@ const replaceMacros = (sourcecode, macros) => {
 
   // Replacements made throughout the AST walk. No partial overlaps. Fully
   // covering a range replaces the range with the wider range.
-  const rangeListFinalized = [];
-  const rangeListActive = ranges;
-
+  /** @type {Range[]} */
+  const closedRanges = rangeList;
   // Index ranges that might still have eval ranges inside of them.
-  const openSpecifierStack = [];
+  /** @type {Range[]} */
+  const openRangesStack = [];
 
   // Macros will just be a function I guess ^-^
   // (specifier:string, ancestors:acorn.Node[]) => [start:number, end:number]
   macros.forEach(macro => {
     macroDefinitions[macro.name] = macro;
   });
+
+  /** @param {number} sourcecodeIndex */
+  const closeRangesUpTo = (sourcecodeIndex) => {
+    /** @param {Range} range */
+    const closeRange = (range) => {
+      const { start, end } = range;
+      let evalExpression = sourcecode.slice(start, end);
+      for (const edit of queryRangesBetween(start, end)) {
+        evalExpression
+          = evalExpression.slice(start, edit.start - 1)
+          + edit.str
+          + evalExpression.slice(edit.end);
+      }
+      let ret;
+      try {
+        ret = eval(evalExpression);
+      } catch (err) {
+        throw new Error(`Macro eval for \`${evalExpression}\` threw: ${err}`);
+      }
+      if (typeof ret !== 'string') {
+        throw new Error(`Macro eval returned ${typeof ret} not a string`);
+      }
+      range.str = ret;
+      insertRange(range);
+    };
+    // Walk through the stack backwards
+    for (let i = openRangesStack.length; i >= 0; i--) {
+      const range = openRangesStack[i];
+      if (sourcecodeIndex > range.end) {
+        openRangesStack.pop();
+        closeRange(range);
+      }
+    }
+  };
 
   const ast = typeof sourcecode === 'string'
     ? acorn.parse(sourcecode, { ecmaVersion: 'latest' })
@@ -106,28 +144,16 @@ const replaceMacros = (sourcecode, macros) => {
       ancestors.forEach((n, i) => {
         console.log(`  - ${'  '.repeat(i)}${n.type}:${JSON.stringify(n)}`);
       });
+      closeRangesUpTo(node.start);
       const changeset = macroDefinitions[meta.source](meta.specifier, ancestors);
       const [start, end] = changeset;
-      insertRange({ start, end });
-
-      // TODO: Move all of this to a close() function:
-      // Maybe even closeStackItemsUntil(index: number) function.
-      const errorLoc = `${meta.specifier}@${node.start}->${node.end}`;
-      let ret;
-      try {
-        ret = eval(sourcecode.slice(start, end));
-      } catch (err) {
-        throw `Macro ${errorLoc}: ${err}`;
-      }
-      if (typeof ret !== 'string') {
-        throw `Macro ${errorLoc} eval returned type ${typeof ret} instead of a string`;
-      }
-      // TODO: Put it back into the known-replacements table...
+      openRangesStack.push({ start, end });
     },
   });
-  // TODO: closeStackItemsUntil(ast.end);
+  closeRangesUpTo(ast.end);
   console.log('macroSpecifiersToLocals', macroSpecifiersToLocals);
   console.log('macroLocalsToSpecifiers', macroLocalsToSpecifiers);
+  console.log('closedRanges', closedRanges);
 
   // TODO: Use the finalized known-replacements table entries to return the new
   // macro-free source

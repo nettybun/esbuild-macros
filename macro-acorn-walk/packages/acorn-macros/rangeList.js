@@ -7,6 +7,7 @@ const insertRange = (ins) => {
   for (let i = 0; i < ranges.length; i++) {
     console.log(`Index ${i}/${ranges.length - 1}`);
     const curr = ranges[i];
+    // TODO: This might be wrong. We want to accept i.s <= c.s && i.e < c.s...
     if (ins.start < curr.start) {
       if (ins.end < curr.start) {
         console.log('Range ins is before curr, inserting; ins,curr', ins, curr);

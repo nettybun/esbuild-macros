@@ -2,31 +2,44 @@
 
 import acorn from 'acorn';
 import * as walk from 'acorn-walk';
+import { ranges, insertRange } from './rangeList.js';
 
-// PLAN: Walk the AST and remove all imports to collect specifiers. For each
-// identifier see if its part of a macro, ask the macro its range, it'll say a
-// start/end index in which the specifier will (later) like to eval. This index
-// is only based on the AST not any replacements that have happened or happen.
-// This is important: it says "I want to eval from A->B and I'll return you
-// something in its place". It's _not_ saying "I want to do AST manipulaiton on
-// this region now/later". This is its _one_ time to see the AST and it doesn't
-// get to modify anything about the AST. Ok. Consider this spec "open" like an
-// open bracket "(" and add it to an open spec stack. Load the next identifier:
-// is it within the open spec? Then it'll be eval'd+replaced before it so add it
-// to the open stack (note if this new open spec says it'll eval _beyond_ it's
-// parent open spec then throw an error; that's wrong). Otherwise, if we're out
-// of an open range of a spec then that/those open spec(s) close. To close a
-// spec, eval the range with all overlaping eval'd ranges considered. This is
-// done by using a known-replacements table that stores the widest replacement
-// range and its content. Note that you can't have partial overlap; it's either
-// no overlap or the incoming changeset will be larger and replace the existing
-// (assert this and throw an error overwise). When you're about to eval a range
-// you ask "does anything in this range need to be replaced before the eval?"
-// No? Then eval it and add a new no-overlap changeset to the table. Yes? Load
-// the changeset from the table, replace the are of the range with it, and
-// replace the entry in the table (widening the ranges of course (assert this)).
-// By the time we're fully done walking the AST we'll have entries in the table
-// that will be directly replaced into the final source code. 🤞🤞
+/*
+PLAN:
+- [x] Walk the AST and remove all imports to collect specifiers.
+- [x] For each identifier see if its part of a macro, ask the macro its range,
+  it'll say a start/end index in which the specifier will (later) like to eval.
+  This index is only based on the AST not any replacements that have happened or
+  happen. This is important: it says "I want to eval from A->B and I'll return
+  you something in its place". It's _not_ saying "I want to do AST manipulation
+  on this region now/later". This is its _one_ time to see the AST and it
+  doesn't get to modify anything about the AST. Ok.
+- [ ] NEW: If there are items on the open stack and this new identifier starts
+  after the top of the open stack, pop that stack item. See "To close a spec"
+  below.
+- [ ] Consider this spec "open" like an open bracket "(" and add it to an open
+  spec stack.
+- [ ] Load the next identifier:
+  TODO: How? (See "NEW" above. Is this in a loop?)
+  - [ ] If within the open spec then it'll be eval'd and replaced before it so
+    add to the open stack (note if this new open spec says it'll eval _beyond_
+    it's parent open spec then throw an error; that's wrong).
+  - [ ] If we're out of an open range of a spec then that/those open spec(s)
+    close. This also has to be considered if the we're at the end and there is
+    no next identiftier to load. To close a spec, eval the range with all
+    overlaping eval'd ranges considered. This is done by using a
+    known-replacements table that stores the widest replacement range and its
+    content. Note that you can't have partial overlap; it's either no overlap or
+    the incoming changeset will be larger and replace the existing (assert this
+    and throw an error overwise). When you're about to eval a range you ask
+    "does anything in this range need to be replaced before the eval?"
+    - [ ] No? Then eval it and add a new no-overlap changeset to the table.
+    - [ ] Yes? Load the changeset from the table, replace the are of the range
+      with it, and replace the entry in the table (widening the ranges of course
+      (assert this)).
+  - [ ] By the time we're fully done walking the AST we'll have entries in the
+    table that will be directly replaced into the final source code. 🤞🤞
+*/
 
 const replaceMacros = (sourcecode, macros) => {
   const macroSpecifiersToLocals = {
@@ -42,7 +55,11 @@ const replaceMacros = (sourcecode, macros) => {
 
   // Replacements made throughout the AST walk. No partial overlaps. Fully
   // covering a range replaces the range with the wider range.
-  const rangeReplacements = {};
+  const rangeListFinalized = [];
+  const rangeListActive = ranges;
+
+  // Index ranges that might still have eval ranges inside of them.
+  const openSpecifierStack = [];
 
   // Macros will just be a function I guess ^-^
   // (specifier:string, ancestors:acorn.Node[]) => [start:number, end:number]
@@ -51,7 +68,7 @@ const replaceMacros = (sourcecode, macros) => {
   });
 
   const ast = typeof sourcecode === 'string'
-    ? acorn.parse(sourcecode, { ecmaVersion: 2020 })
+    ? acorn.parse(sourcecode, { ecmaVersion: 'latest' })
     : sourcecode;
   if (!ast || ast.type !== 'Program') {
     throw new Error('Provided sourcecode must JS code string or an Acorn AST');
@@ -91,9 +108,10 @@ const replaceMacros = (sourcecode, macros) => {
       });
       const changeset = macroDefinitions[meta.source](meta.specifier, ancestors);
       const [start, end] = changeset;
-      // TODO: Add the changeset to the known-replacement table
-      rangeReplacements[''] = ''; //???
+      insertRange({ start, end });
 
+      // TODO: Move all of this to a close() function:
+      // Maybe even closeStackItemsUntil(index: number) function.
       const errorLoc = `${meta.specifier}@${node.start}->${node.end}`;
       let ret;
       try {
@@ -107,13 +125,14 @@ const replaceMacros = (sourcecode, macros) => {
       // TODO: Put it back into the known-replacements table...
     },
   });
+  // TODO: closeStackItemsUntil(ast.end);
   console.log('macroSpecifiersToLocals', macroSpecifiersToLocals);
   console.log('macroLocalsToSpecifiers', macroLocalsToSpecifiers);
 
-  // TODO: Use the remaining known-replacements table entries to return the new
+  // TODO: Use the finalized known-replacements table entries to return the new
   // macro-free source
 
-  // TODO: Final replacements...
+  // TODO: Do the final replacements via str.replace()
   return sourcecode;
 };
 

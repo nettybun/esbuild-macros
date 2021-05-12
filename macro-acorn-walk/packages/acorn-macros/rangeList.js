@@ -11,13 +11,13 @@ const insertRange = (ins) => {
     console.log(`Index ${i}/${ranges.length - 1}`);
     const curr = ranges[i];
     // Entirely _before_ curr.
-    if (ins.start < curr.start && ins.end < curr.start) {
+    if (ins.end < curr.start) {
       console.log('Range ins is before curr, inserting; ins,curr', ins, curr);
       ranges.splice(i, 0, ins);
       return;
     }
     // Entirely _after_ curr
-    if (ins.start > curr.start && ins.start > curr.end) {
+    if (ins.start > curr.end) {
       console.log('Range ins is after curr, nexting; ins,curr', ins, curr);
       continue; // Next.
     }

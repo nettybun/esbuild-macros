@@ -18,12 +18,12 @@ const styleTakeoutMacro = (options) => {
           throw 'Macros css and injectGlobal must be called as tag template functions';
         }
         const range = nodeParent;
-        return [range.start, range.end];
+        return { start: range.start, end: range.end };
       }
       if (importSpecifier in objectExports) {
         // TODO: Read up the ancestor path to member expression.
         const range = {};
-        return [range.start, range.end];
+        return { start: range.start, end: range.end };
       }
       throw new Error(`Unknown import "${importSpecifier}" for styletakeout.macro`);
     },

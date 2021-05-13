@@ -65,7 +65,7 @@ const replaceMacros = (sourcecode, macros) => {
       }
       console.log(`Found import statement ${node.start}->${node.end}`);
       const sourceName = node.source.value;
-      if (!sourceName.endsWith('.macro')) return;
+      if (!sourceName.endsWith('.macro') || !macroIndices[sourceName]) return;
       node.specifiers.forEach(n => {
         const specImportMap = macroSpecifiersToLocals[sourceName] || (macroSpecifiersToLocals[sourceName] = {});
         const specLocals = specImportMap[n.imported.name] || (specImportMap[n.imported.name] = []);

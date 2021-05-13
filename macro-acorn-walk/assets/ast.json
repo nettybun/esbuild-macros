@@ -1,7 +1,7 @@
 {
   "type": "Program",
   "start": 0,
-  "end": 946,
+  "end": 1036,
   "body": [
     {
       "type": "ImportDeclaration",
@@ -1291,6 +1291,106 @@
         }
       ],
       "kind": "var"
+    },
+    {
+      "type": "ExpressionStatement",
+      "start": 1004,
+      "end": 1024,
+      "expression": {
+        "type": "MemberExpression",
+        "start": 1004,
+        "end": 1023,
+        "object": {
+          "type": "MemberExpression",
+          "start": 1004,
+          "end": 1020,
+          "object": {
+            "type": "MemberExpression",
+            "start": 1004,
+            "end": 1018,
+            "object": {
+              "type": "MemberExpression",
+              "start": 1004,
+              "end": 1010,
+              "object": {
+                "type": "Identifier",
+                "start": 1004,
+                "end": 1008,
+                "name": "decl"
+              },
+              "property": {
+                "type": "Identifier",
+                "start": 1009,
+                "end": 1010,
+                "name": "l"
+              },
+              "computed": false,
+              "optional": false
+            },
+            "property": {
+              "type": "Identifier",
+              "start": 1011,
+              "end": 1018,
+              "name": "colours"
+            },
+            "computed": false,
+            "optional": false
+          },
+          "property": {
+            "type": "Identifier",
+            "start": 1019,
+            "end": 1020,
+            "name": "i"
+          },
+          "computed": false,
+          "optional": false
+        },
+        "property": {
+          "type": "Identifier",
+          "start": 1021,
+          "end": 1023,
+          "name": "ok"
+        },
+        "computed": false,
+        "optional": false
+      }
+    },
+    {
+      "type": "ExpressionStatement",
+      "start": 1025,
+      "end": 1035,
+      "expression": {
+        "type": "MemberExpression",
+        "start": 1025,
+        "end": 1034,
+        "object": {
+          "type": "MemberExpression",
+          "start": 1025,
+          "end": 1031,
+          "object": {
+            "type": "Identifier",
+            "start": 1025,
+            "end": 1029,
+            "name": "decl"
+          },
+          "property": {
+            "type": "Identifier",
+            "start": 1030,
+            "end": 1031,
+            "name": "s"
+          },
+          "computed": false,
+          "optional": false
+        },
+        "property": {
+          "type": "Identifier",
+          "start": 1032,
+          "end": 1034,
+          "name": "ok"
+        },
+        "computed": false,
+        "optional": false
+      }
     }
   ],
   "sourceType": "module"

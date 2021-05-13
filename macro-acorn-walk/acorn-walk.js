@@ -48,11 +48,13 @@ walk.ancestor(ast, {
   // XXX: This is different than `ast.filter(o => o.type === "Indentifier")`
   // because it _skips_ identifier nodes that are part of variable declarations,
   // import specifiers, and other areas that _define_ an identifier. This walk
-  // callback is only for the _use_ of identifiers I think...
+  // callback is only for the _use_ of identifiers. It's also great because an
+  // identifier in a member expression like "ok.decl.ok" matching _only_ the
+  // first "ok" and not "decl" even though "decl" is { type: "Identifier" } too
   Identifier(node, state, ancestors) {
     const meta = macroLocalsToSpecifiers[node.name];
     if (!meta) {
-      console.log(`SKIP Identifier ${node.start}->${node.end}`);
+      console.log(`SKIP Identifier ${node.start}->${node.end} ${node.name}`);
       return;
     }
     console.log(`Indentifier ${node.start}->${node.end} ${node.name} from ${meta.source}:${meta.specifier}`);

@@ -28,3 +28,6 @@ b = `m5 p5 ${o} ${e`vertical-align: middle`} align-center ${o}`,
 f = `${o} ${e`vertical-align: middle`}`,
 h = `${e`vertical-align: middle`}`,
 y = `${e`vertical-align: middle`} hello`;
+// Does acorn-walk skip similarly named identifiers? YES!
+decl.l.colours.i.ok;
+decl.s.ok;

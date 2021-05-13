@@ -2,69 +2,69 @@
 /** @type {Array<Range>} */
 const rangeList = [];
 
+/** @param {Range} range */
+const p = (range) => `[${range.start},${range.end}]`;
+
 /** @type {(range: Range) => void} */
 const insertRange = (ins) => {
-  if (ins.start > ins.end) {
-    throw new Error('Range ins start > end');
-  }
+  if (ins.start > ins.end) throw new Error('Range ins start > end');
+  // Stored in reverse order so .forEach(splice()) doesn't mess up indices
+  const removeIndices = [];
   for (let i = 0; i < rangeList.length; i++) {
-    console.log(`Index ${i}/${rangeList.length - 1}`);
     const curr = rangeList[i];
-    // Entirely _before_ curr.
-    if (ins.end < curr.start) {
-      console.log('Range ins is before curr, inserting; ins,curr', ins, curr);
-      rangeList.splice(i, 0, ins);
-      return;
-    }
-    // Entirely _after_ curr
-    if (ins.start > curr.end) {
-      console.log('Range ins is after curr, nexting; ins,curr', ins, curr);
-      continue; // Next.
-    }
-    // Overlapping ins into the left of curr
-    if (ins.end >= curr.start) {
-      console.log('Unexpected partial overlap; ins,curr:', ins, curr);
-      throw new Error('Overlap');
-    }
-    // Overlapping ins into the right of curr
-    if (ins.start <= curr.end) {
-      console.log('Unexpected partial overlap; ins,curr:', ins, curr);
-      throw new Error('Overlap');
-    }
     // Covering entire curr by ins
     if (ins.start <= curr.start && ins.end >= curr.end) {
-      console.log('Range ins is bigger than curr, removing curr; ins,curr', ins, curr);
-      rangeList.splice(i, 1);
-      i--;
-      continue; // Next.
+      console.log(`Upcoming insert of ${p(ins)} will cover/replace ${p(curr)}`);
+      removeIndices.unshift(i);
+      continue;
     }
     // Covered entire ins by curr
     if (ins.start >= curr.start && ins.end <= curr.end) {
-      console.log('Unexpected ins smaller than curr; ins,curr', ins, curr);
-      throw new Error('Range ins smaller than curr');
+      throw new Error(`Range ${p(ins)} would be covered by ${p(curr)}`);
+    }
+    let ib, ia;
+    // Entirely before curr
+    if ((ib = ins.end < curr.start)) {
+      console.log(`${p(ins)} < ${p(curr)}; inserting`);
+      rangeList.splice(i, 0, ins);
+      removeIndices.forEach(ri => {
+        console.log(`Removing ${p(rangeList[ri])}`);
+        rangeList.splice(ri, 1);
+      });
+      return;
+    }
+    // Entirely after curr
+    if ((ia = ins.start > curr.end)) {
+      console.log(`${p(ins)} > ${p(curr)}; next`);
+      continue;
+    }
+    // Overlapping before (ib) or after (ia) curr
+    if (!ib || !ia) {
+      throw new Error(`Partial overlap of ${p(ins)} with ${p(curr)}`);
     }
     throw new Error('Unreachable');
   }
+  rangeList.push(ins);
 };
 
 /** @param {number} start; @param {number} end */
 const queryRangesBetween = (start, end) => {
-  if (start > end) {
-    throw new Error('Query start > end');
-  }
+  if (start > end) throw new Error('Query start > end');
   const matchingRanges = [];
   for (let i = 0; i < rangeList.length; i++) {
     const curr = rangeList[i];
-    // Entirely before
-    if (curr.end < start) continue;
-    // Entirely after. We're passed the range. Done.
-    if (curr.start > end) break;
-    // Half in on the left
-    if (curr.start < start && curr.end > start) throw new Error('Half in left');
-    // Half in on the right
-    if (curr.start < end && curr.end > end) throw new Error('Half in right');
     // OK
-    if (curr.start >= start && curr.end <= end) matchingRanges.push(curr);
+    if (curr.start >= start && curr.end <= end) {
+      matchingRanges.push(curr);
+      continue;
+    }
+    let cb, ca;
+    // Entirely before
+    if ((cb = curr.end < start)) continue;
+    // Entirely after. We're passed the range. Exit.
+    if ((ca = curr.start > end)) break;
+    if (!cb) throw new Error(`Overlap into ${i}`);
+    if (!ca) throw new Error(`Overlap out from ${i}`);
     throw new Error('Unreachable');
   }
   return matchingRanges;

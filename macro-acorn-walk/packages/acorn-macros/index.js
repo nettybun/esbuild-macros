@@ -8,73 +8,54 @@ import * as walk from 'acorn-walk';
 
 /** @param {string} sourcecode; @param {Macro[]} macros */
 const replaceMacros = (sourcecode, macros) => {
-  const macroSpecifiersToLocals = {
-    // "styletakeout.macro": { "decl": ["a1", "d"], "css": ["c", "c1"] }, ...
-  };
-  const macroLocalsToSpecifiers = {
-    // "a1": { "source": "styletakeout.macro", "specifier": "decl" }, ...
-  };
-
-  // Per-macro functions which receive one of their specifiers and its AST
-  // identifier ancestor list to return an index range that will be eval'd
-  const macroDefinitions = {};
-
-  // Replacements made throughout the AST walk. No partial overlaps. Fully
-  // covering a range replaces the range with the wider range.
-  /** @type {Range[]} */
-  const closedRanges = rangeList;
-  // Index ranges that might still have eval ranges inside of them.
-  /** @type {Range[]} */
-  const openRangesStack = [];
-
-  // Macros will just be a function I guess ^-^
-  // (specifier:string, ancestors:acorn.Node[]) => [start:number, end:number]
-  macros.forEach(macro => {
-    macroDefinitions[macro.name] = macro;
+  /** @type {{ [importSource: string]: number }} */
+  const macroIndices = {};
+  /** @type {{ [importSource: string]: MacroRangeResolver }} */
+  const macroRangeFromAST = {};
+  /** @type {MacroExports} */
+  const macroExports = {};
+  macros.forEach((macro, i) => {
+    const name = macro.importSource;
+    if (macroIndices[name])
+      throw new Error(`Duplicate macro "${name}" at indices ${macroIndices[name]} and ${i}`);
+    macroIndices[name] = i;
+    macroRangeFromAST[name] = macro.rangeFromAST;
+    macroExports[name] = macro.exports;
   });
+  /** @type {{ [macro: string]: { [spec: string]: string[] } }} string[] is of local variable names */
+  const macroSpecifiersToLocals = {};
+  /** @type {{ [local: string]: { source: string, specifier: string } }} source is the macro name */
+  const macroLocalsToSpecifiers = {};
 
-  /** @param {number} sourcecodeIndex */
-  const closeRangesUpTo = (sourcecodeIndex) => {
-    /** @param {Range} range */
-    const closeRange = (range) => {
-      const { start, end } = range;
-      let evalExpression = sourcecode.slice(start, end);
-      for (const edit of queryRangesBetween(start, end)) {
-        evalExpression
-          = evalExpression.slice(start, edit.start - 1)
-          + edit.str
-          + evalExpression.slice(edit.end);
-      }
-      let ret;
-      try {
-        ret = eval(evalExpression);
-      } catch (err) {
-        throw new Error(`Macro eval for \`${evalExpression}\` threw: ${err}`);
-      }
-      if (typeof ret !== 'string') {
-        throw new Error(`Macro eval returned ${typeof ret} not a string`);
-      }
-      range.str = ret;
-      insertRange(range);
-    };
-    // Walk through the stack backwards
-    for (let i = openRangesStack.length; i >= 0; i--) {
-      const range = openRangesStack[i];
-      if (sourcecodeIndex > range.end) {
-        openRangesStack.pop();
-        closeRange(range);
-      }
-    }
-  };
+  // Identifier ranges that could have macros in them. We've started parsing
+  // their range (given by rangeFromAST) but haven't reached their end yet.
+  /** @type {IntervalRange[]} */
+  // TODO: Maybe not type IntervalRange, needs to track which macro it's for...
+  // TODO: Maybe be honest and call it a stack
+  const openIdentifierRanges = [];
+  // Identifiers that have been fully processed and eval'd. We've parsed past
+  // their range end and these are ready to be sliced directly into the code.
+  /** @type {(IntervalRange & { str: string })[]} */
+  // TODO: Maybe not type IntervalRange, needs to track eval'd content...
+  const closedIdentifierRanges = [];
+
+  /** @param {(IntervalRange & { str: string })} range */
+  const insertClosedId = (range) =>
+    intervalRangeListInsert(closedIdentifierRanges, range);
+
+  /** @param {number} start; @param {number} end */
+  // TODO: Maybe splice not query
+  const queryClosedIds = (start, end) =>
+    intervalRangeListQuery(closedIdentifierRanges, start, end);
 
   const ast = typeof sourcecode === 'string'
     ? acorn.parse(sourcecode, { ecmaVersion: 'latest' })
     : sourcecode;
-  if (!ast || ast.type !== 'Program') {
+  if (!ast || ast.type !== 'Program')
     throw new Error('Provided sourcecode must JS code string or an Acorn AST');
-  }
 
-  // This is per ECMAScript spec but not enforced by Acorn.
+  // Import statements must come first as per ECMAScript specification but this
+  // isn't enforced by Acorn, so throw if an import is after an identifier.
   let seenIndentifier = false;
   // TODO: Add types https://github.com/acornjs/acorn/issues/946
   walk.ancestor(ast, {
@@ -106,21 +87,64 @@ const replaceMacros = (sourcecode, macros) => {
       ancestors.forEach((n, i) => {
         console.log(`  - ${'  '.repeat(i)}${n.type}:${JSON.stringify(n)}`);
       });
-      closeRangesUpTo(node.start);
-      const changeset = macroDefinitions[meta.source](meta.specifier, ancestors);
-      const [start, end] = changeset;
-      openRangesStack.push({ start, end });
+      const resolver = macroRangeFromAST[meta.source];
+      const range = resolver(meta.specifier, ancestors);
+      // Move items from open -> closed _BEFORE_ adding to the open stack
+      closeOpenIdsUpTo(range.start);
+      openIdentifierRanges.push(range);
     },
   });
-  closeRangesUpTo(ast.end);
+  // There might be elements on the open stack still so clear them
+  closeOpenIdsUpTo(ast.end);
+
+  /** @param {number} sourcecodeIndex */
+  function closeOpenIdsUpTo(sourcecodeIndex) {
+    // Walk through the stack backwards
+    for (let i = openIdentifierRanges.length; i >= 0; i--) {
+      const range = openIdentifierRanges[i];
+      if (range.end > sourcecodeIndex) return;
+      openIdentifierRanges.pop();
+      closeOpenId(range);
+    }
+  }
+
+  /** @param {IntervalRange} range */
+  function closeOpenId(range) {
+    // XXX: To do this I'll need to know what identifier/macro this is. That
+    // information isn't currently stored in the open stack.
+    const { start, end, identifier } = range;
+    let evalExpression = sourcecode.slice(start, end);
+    for (const edit of queryClosedIds(start, end)) {
+      // TODO: Possibly remove the closed id so re-entry (below) doesn't need to
+      // replace the id. Simplifies overlap/covering logic.
+      evalExpression
+        = evalExpression.slice(start, edit.start - 1)
+        // TODO: This needs to live somewhere...
+        + edit.str
+        + evalExpression.slice(edit.end);
+    }
+    let ret;
+    const spec = macroLocalsToSpecifiers[identifier.name];
+    try {
+      // Running in a new closure so `identifier.name` doesn't conflict
+      {
+        eval(`const ${identifier.name} = macroExports.${spec}; ret = ${evalExpression}`);
+      }
+    } catch (err) {
+      throw new Error(`Macro eval for \`${evalExpression}\` threw: ${err}`);
+    }
+    if (typeof ret !== 'string') {
+      throw new Error(`Macro eval returned ${typeof ret} not a string`);
+    }
+    // TODO: See TODO comment above
+    insertClosedId({ start, end, str: ret });
+  }
   console.log('macroSpecifiersToLocals', macroSpecifiersToLocals);
   console.log('macroLocalsToSpecifiers', macroLocalsToSpecifiers);
-  console.log('closedRanges', closedRanges);
+  console.log('openIdentifierRanges', openIdentifierRanges);
+  console.log('closedIdentifierRanges', closedIdentifierRanges);
 
-  // TODO: Use the finalized known-replacements table entries to return the new
-  // macro-free source
-
-  // TODO: Do the final replacements via str.replace()
+  // TODO: Use the closedIdentifierRanges entries to return macro-free source
   return sourcecode;
 };
 
@@ -137,6 +161,8 @@ function intervalRangeListInsert(list, range) {
     // Name: Current range
     const cur = list[i];
     // Covering entire cur by ins
+    // TODO: Considering this an error and forcing queries/reads to REMOVE the
+    // entry would be good/less code... Could make any overlap illegal
     if (ins.start <= cur.start && ins.end >= cur.end) {
       console.log(`Upcoming insert of ${p(ins)} will cover/replace ${p(cur)}`);
       removeIndices.unshift(i);
@@ -171,6 +197,7 @@ function intervalRangeListInsert(list, range) {
   list.push(ins);
 }
 
+// TODO: Not query but "intervalRangeListSplice()"? I can remove them...
 /** @param {IntervalRange[]} list; @param {number} start; @param {number} end */
 function intervalRangeListQuery(list, start, end) {
   /** @param {IntervalRange} range */

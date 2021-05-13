@@ -1,50 +1,12 @@
-// Provides replaceMacros()
-
 import acorn from 'acorn';
 import * as walk from 'acorn-walk';
-import { rangeList, insertRange, queryRangesBetween } from './rangeList.js';
 
-/** @typedef {import('./rangeList').Range} Range */
-/** @typedef {(specifier:string, ancestors:acorn.Node[]) => [start:number, end:number]} MacroFunctions */
+/** @typedef {{ importSource: string, rangeFromAST: MacroRangeResolver, exports: { [name: string]: any } }} Macro */
+/** @typedef {{ [name: string]: any }} MacroExports */
+/** @typedef {{ start: number, end: number }} IntervalRange */
+/** @typedef {(specifier:string, ancestors:acorn.Node[]) => IntervalRange} MacroRangeResolver */
 
-/*
-PLAN:
-- [x] Walk the AST and remove all imports to collect specifiers.
-- [x] For each identifier see if its part of a macro, ask the macro its range,
-  it'll say a start/end index in which the specifier will (later) like to eval.
-  This index is only based on the AST not any replacements that have happened or
-  happen. This is important: it says "I want to eval from A->B and I'll return
-  you something in its place". It's _not_ saying "I want to do AST manipulation
-  on this region now/later". This is its _one_ time to see the AST and it
-  doesn't get to modify anything about the AST. Ok.
-- [ ] NEW: If there are items on the open stack and this new identifier starts
-  after the top of the open stack, pop that stack item. See "To close a spec"
-  below.
-- [ ] Consider this spec "open" like an open bracket "(" and add it to an open
-  spec stack.
-- [ ] Load the next identifier:
-  TODO: How? (See "NEW" above. Is this in a loop?)
-  - [ ] If within the open spec then it'll be eval'd and replaced before it so
-    add to the open stack (note if this new open spec says it'll eval _beyond_
-    it's parent open spec then throw an error; that's wrong).
-  - [ ] If we're out of an open range of a spec then that/those open spec(s)
-    close. This also has to be considered if the we're at the end and there is
-    no next identiftier to load. To close a spec, eval the range with all
-    overlaping eval'd ranges considered. This is done by using a
-    known-replacements table that stores the widest replacement range and its
-    content. Note that you can't have partial overlap; it's either no overlap or
-    the incoming changeset will be larger and replace the existing (assert this
-    and throw an error overwise). When you're about to eval a range you ask
-    "does anything in this range need to be replaced before the eval?"
-    - [ ] No? Then eval it and add a new no-overlap changeset to the table.
-    - [ ] Yes? Load the changeset from the table, replace the are of the range
-      with it, and replace the entry in the table (widening the ranges of course
-      (assert this)).
-  - [ ] By the time we're fully done walking the AST we'll have entries in the
-    table that will be directly replaced into the final source code. 🤞🤞
-*/
-
-/** @param {string} sourcecode; @param {MacroFunctions[]} macros */
+/** @param {string} sourcecode; @param {Macro[]} macros */
 const replaceMacros = (sourcecode, macros) => {
   const macroSpecifiersToLocals = {
     // "styletakeout.macro": { "decl": ["a1", "d"], "css": ["c", "c1"] }, ...
@@ -162,5 +124,76 @@ const replaceMacros = (sourcecode, macros) => {
   return sourcecode;
 };
 
+/** @param {IntervalRange[]} list; @param {IntervalRange} range  */
+function intervalRangeListInsert(list, range) {
+  /** @param {IntervalRange} range */
+  const p = (range) => `[${range.start},${range.end}]`;
+  // Name: Insert range
+  const ins = range;
+  if (ins.start > ins.end) throw new Error('Given range start > end');
+  // Stored in reverse order so .forEach(splice()) doesn't mess up indices
+  const removeIndices = [];
+  for (let i = 0; i < list.length; i++) {
+    // Name: Current range
+    const cur = list[i];
+    // Covering entire cur by ins
+    if (ins.start <= cur.start && ins.end >= cur.end) {
+      console.log(`Upcoming insert of ${p(ins)} will cover/replace ${p(cur)}`);
+      removeIndices.unshift(i);
+      continue;
+    }
+    // Covered entire ins by cur
+    if (ins.start >= cur.start && ins.end <= cur.end) {
+      throw new Error(`Range ${p(ins)} would be covered by ${p(cur)}`);
+    }
+    let ib, ia;
+    // Entirely before cur
+    if ((ib = ins.end < cur.start)) {
+      console.log(`${p(ins)} < ${p(cur)}; inserting`);
+      list.splice(i, 0, ins);
+      removeIndices.forEach(ri => {
+        console.log(`Removing ${p(list[ri])}`);
+        list.splice(ri, 1);
+      });
+      return;
+    }
+    // Entirely after cur
+    if ((ia = ins.start > cur.end)) {
+      console.log(`${p(ins)} > ${p(cur)}; next`);
+      continue;
+    }
+    // Overlapping before (ib) or after (ia) cur
+    if (!ib || !ia) {
+      throw new Error(`Partial overlap of ${p(ins)} with ${p(cur)}`);
+    }
+    throw new Error('Unreachable');
+  }
+  list.push(ins);
+}
+
+/** @param {IntervalRange[]} list; @param {number} start; @param {number} end */
+function intervalRangeListQuery(list, start, end) {
+  /** @param {IntervalRange} range */
+  const p = (range) => `[${range.start},${range.end}]`;
+  if (start > end) throw new Error('Given range start > end');
+  const matching = [];
+  for (let i = 0; i < list.length; i++) {
+    const cur = list[i];
+    // OK
+    if (cur.start >= start && cur.end <= end) {
+      matching.push(cur);
+      continue;
+    }
+    let cb, ca;
+    // Entirely before
+    if ((cb = cur.end < start)) continue;
+    // Entirely after. We're passed the range. Exit.
+    if ((ca = cur.start > end)) break;
+    if (!cb) throw new Error(`Query partial enters into ${p(cur)}`);
+    if (!ca) throw new Error(`Query partial leaves out ${p(cur)}`);
+    throw new Error('Unreachable');
+  }
+  return matching;
+}
 
 export { replaceMacros };

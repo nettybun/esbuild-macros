@@ -1,26 +1,37 @@
-// This is the AST processing code used in replaceMacro()
+// This is the AST processing code used in replaceMacro(). It's looking for tag
+// template expressions and objects member expressions. If you're a macro author
+// you might want to support other types too, such as unary expressions,
+// function calls, etc.
 
-// Macros will just be a function I guess ^-^
-// (specifier:string, ancestors:acorn.Node[]) => [start:number, end:number]
+const cssImpl = () => {};
+const injectGlobalImpl = () => {};
+
 const styleTakeoutMacro = (options) => {
-  const importEvals = options.importEvals ?? {};
-  return (specifier, ancestors) => {
-    const node = ancestors[ancestors.length - 1];
-    const nodeParent = ancestors[ancestors.length - 2];
-    if ('css' === specifier || 'injectGlobal' === specifier) {
-      if (nodeParent.type !== 'TaggedTemplateExpression') {
-        throw 'Macros css and injectGlobal must be called as tag template functions';
+  const objectExports = options.objectExports ?? {};
+  return {
+    importSource: 'styletakeout.macro',
+    rangeFromAST: (importSpecifier, identifierAncestors) => {
+      const node = identifierAncestors[identifierAncestors.length - 1];
+      const nodeParent = identifierAncestors[identifierAncestors.length - 2];
+      if ('css' === importSpecifier || 'injectGlobal' === importSpecifier) {
+        if (nodeParent.type !== 'TaggedTemplateExpression') {
+          throw 'Macros css and injectGlobal must be called as tag template functions';
+        }
+        const range = nodeParent;
+        return [range.start, range.end];
       }
-      const range = nod// eParent;
-      return [range.start, range.end];
-    }
-    if (specifier in importEvals) {
-      // TODO: Read up the ancestor path tp the nearest expression? Need a
-      // replacement range to eval...
-      const range = // ???; Unary expression? Tag template? Function parameter?
-      return [range.start, range.end];
-    }
-    throw new Error(`Unknown import "${specifier}" for styletakeout.macro`);
+      if (importSpecifier in objectExports) {
+        // TODO: Read up the ancestor path to member expression.
+        const range = {};
+        return [range.start, range.end];
+      }
+      throw new Error(`Unknown import "${importSpecifier}" for styletakeout.macro`);
+    },
+    exports: {
+      css: cssImpl,
+      injectGlobal: injectGlobalImpl,
+      ...objectExports,
+    },
   };
 };
 

@@ -34,13 +34,6 @@ async function build() {
   });
   const [result] = buildResult.outputFiles;
   const bundleA = (new TextDecoder()).decode(result.contents);
-  // XXX: Should this be like acorn-globals are accept either a string or ast?
-  // Unfortunately developers often favour simplicity over explicitness...
-
-  // XXX: Similarly, I think it'd be handy to return a list of replacement
-  // objects (diffs) in order, rather than perform them all and return a string
-  // but I think I'd be the only person to appreciate that! ;n;
-
   // XXX: It makes sense for replaceMacros() to handle template string
   // simplification for _all_ macros instead of doing it in only styletakeout
   const bundleB = replaceMacros(bundleA, [

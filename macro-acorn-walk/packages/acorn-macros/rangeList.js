@@ -22,12 +22,12 @@ const insertRange = (ins) => {
       continue; // Next.
     }
     // Overlapping ins into the left of curr
-    if (ins.start < curr.start && ins.end >= curr.start) {
+    if (ins.end >= curr.start) {
       console.log('Unexpected partial overlap; ins,curr:', ins, curr);
       throw new Error('Overlap');
     }
     // Overlapping ins into the right of curr
-    if (ins.start >= curr.start && ins.end >= curr.end) {
+    if (ins.start <= curr.end) {
       console.log('Unexpected partial overlap; ins,curr:', ins, curr);
       throw new Error('Overlap');
     }

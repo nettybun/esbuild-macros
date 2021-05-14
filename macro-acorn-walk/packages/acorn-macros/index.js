@@ -6,6 +6,9 @@ import * as walk from 'acorn-walk';
 /** @typedef {{ start: number, end: number }} IntervalRange */
 /** @typedef {(specifier:string, ancestors:acorn.Node[]) => IntervalRange} MacroRangeResolver */
 
+/** @typedef {IntervalRange & { macroLocal: string }} OpenMacroRange */
+/** @typedef {IntervalRange & { code: string }} ClosedMacroRange */
+
 /** @param {string} sourcecode; @param {Macro[]} macros */
 const replaceMacros = (sourcecode, macros) => {
   /** @type {{ [importSource: string]: number }} */
@@ -16,8 +19,9 @@ const replaceMacros = (sourcecode, macros) => {
   const macroExports = {};
   macros.forEach((macro, i) => {
     const name = macro.importSource;
-    if (macroIndices[name])
+    if (macroIndices[name]) {
       throw new Error(`Duplicate macro "${name}" at indices ${macroIndices[name]} and ${i}`);
+    }
     macroIndices[name] = i;
     macroRangeFromAST[name] = macro.rangeFromAST;
     macroExports[name] = macro.exports;
@@ -29,39 +33,41 @@ const replaceMacros = (sourcecode, macros) => {
 
   // Identifier ranges that could have macros in them. We've started parsing
   // their range (given by rangeFromAST) but haven't reached their end yet.
-  /** @type {IntervalRange[]} */
-  // TODO: Maybe not type IntervalRange, needs to track which macro it's for...
-  // TODO: Maybe be honest and call it a stack
-  const openIdentifierRanges = [];
+  /** @type {OpenMacroRange[]} */
+  const openMacroRangeStack = [];
   // Identifiers that have been fully processed and eval'd. We've parsed past
   // their range end and these are ready to be sliced directly into the code.
-  /** @type {(IntervalRange & { str: string })[]} */
-  // TODO: Maybe not type IntervalRange, needs to track eval'd content...
-  const closedIdentifierRanges = [];
+  /** @type {ClosedMacroRange[]} */
+  const closedMacroRangeList = [];
 
-  /** @param {(IntervalRange & { str: string })} range */
-  const insertClosedId = (range) =>
-    intervalRangeListInsert(closedIdentifierRanges, range);
+  /** @type {(range: ClosedMacroRange) => void} */
+  const insertClosed = (range) =>
+    intervalRangeListInsert(closedMacroRangeList, range);
 
-  /** @param {number} start; @param {number} end */
-  // TODO: Maybe splice not query
-  const queryClosedIds = (start, end) =>
-    intervalRangeListQuery(closedIdentifierRanges, start, end);
+  /** @type {(start: number, end: number) => ClosedMacroRange[]} */
+  const spliceClosed = (start, end) =>
+    // @ts-ignore JSDoc doesn't do <T extends IntervalRange[]>...
+    intervalRangeListSplice(closedMacroRangeList, start, end);
 
   const ast = typeof sourcecode === 'string'
     ? acorn.parse(sourcecode, { ecmaVersion: 'latest' })
     : sourcecode;
-  if (!ast || ast.type !== 'Program')
+  if (!ast || ast.type !== 'Program') {
     throw new Error('Provided sourcecode must JS code string or an Acorn AST');
-
+  }
   // Import statements must come first as per ECMAScript specification but this
   // isn't enforced by Acorn, so throw if an import is after an identifier.
   let seenIndentifier = false;
   // TODO: Add types https://github.com/acornjs/acorn/issues/946
+  /** @typedef {{ name: string }} Named */
+  /** @typedef {acorn.Node & { name: string }} IdentifierNode */
+  /** @typedef {acorn.Node & { source: { value: string }, specifiers: SpecifierNode[] }} ImportNode */
+  /** @typedef {acorn.Node & { local: Named, imported: Named }} SpecifierNode */
   walk.ancestor(ast, {
+    /** @param {ImportNode} node */
     ImportDeclaration(node) {
       if (seenIndentifier) {
-        throw new Error('Can\'t declare an import after an identifier');
+        throw new Error('Import statement found after an identifier');
       }
       console.log(`Found import statement ${node.start}->${node.end}`);
       const sourceName = node.source.value;
@@ -69,15 +75,15 @@ const replaceMacros = (sourcecode, macros) => {
       node.specifiers.forEach(n => {
         const specImportMap = macroSpecifiersToLocals[sourceName] || (macroSpecifiersToLocals[sourceName] = {});
         const specLocals = specImportMap[n.imported.name] || (specImportMap[n.imported.name] = []);
-        if (!specLocals.includes(n.local.name)) {
-          specLocals.push(n.local.name);
-          macroLocalsToSpecifiers[n.local.name] = {
-            source: sourceName,
-            specifier: n.imported.name,
-          };
-        }
+        if (specLocals.includes(n.local.name)) return;
+        specLocals.push(n.local.name);
+        macroLocalsToSpecifiers[n.local.name] = {
+          source: sourceName,
+          specifier: n.imported.name,
+        };
       });
     },
+    /** @param {IdentifierNode} node */
     Identifier(node, state, ancestors) {
       seenIndentifier = true;
       console.log('Identifier', node.name);
@@ -88,10 +94,10 @@ const replaceMacros = (sourcecode, macros) => {
         console.log(`  - ${'  '.repeat(i)}${n.type}:${JSON.stringify(n)}`);
       });
       const resolver = macroRangeFromAST[meta.source];
-      const range = resolver(meta.specifier, ancestors);
+      const { start, end } = resolver(meta.specifier, ancestors);
       // Move items from open -> closed _BEFORE_ adding to the open stack
-      closeOpenIdsUpTo(range.start);
-      openIdentifierRanges.push(range);
+      closeOpenIdsUpTo(start);
+      openMacroRangeStack.push({ start, end, macroLocal: node.name });
     },
   });
   // There might be elements on the open stack still so clear them
@@ -100,120 +106,98 @@ const replaceMacros = (sourcecode, macros) => {
   /** @param {number} sourcecodeIndex */
   function closeOpenIdsUpTo(sourcecodeIndex) {
     // Walk through the stack backwards
-    for (let i = openIdentifierRanges.length; i >= 0; i--) {
-      const range = openIdentifierRanges[i];
-      if (range.end > sourcecodeIndex) return;
-      openIdentifierRanges.pop();
-      closeOpenId(range);
+    for (let i = openMacroRangeStack.length; i >= 0; i--) {
+      const open = openMacroRangeStack[i];
+      if (open.end > sourcecodeIndex) return;
+      openMacroRangeStack.pop();
+      closeOpenId(open);
     }
   }
 
-  /** @param {IntervalRange} range */
-  function closeOpenId(range) {
-    // XXX: To do this I'll need to know what identifier/macro this is. That
-    // information isn't currently stored in the open stack.
-    const { start, end, identifier } = range;
+  /** @param {OpenMacroRange} open */
+  function closeOpenId(open) {
+    const { start, end, macroLocal } = open;
     let evalExpression = sourcecode.slice(start, end);
-    for (const edit of queryClosedIds(start, end)) {
-      // TODO: Possibly remove the closed id so re-entry (below) doesn't need to
-      // replace the id. Simplifies overlap/covering logic.
+    for (const edit of spliceClosed(start, end)) {
       evalExpression
         = evalExpression.slice(start, edit.start - 1)
-        // TODO: This needs to live somewhere...
-        + edit.str
+        + edit.code
         + evalExpression.slice(edit.end);
     }
-    let ret;
-    const spec = macroLocalsToSpecifiers[identifier.name];
+    let code;
+    const spec = macroLocalsToSpecifiers[macroLocal];
     try {
-      // Running in a new closure so `identifier.name` doesn't conflict
+      // Running in a new closure so `macroLocal` doesn't conflict with us
       {
-        eval(`const ${identifier.name} = macroExports.${spec}; ret = ${evalExpression}`);
+        eval(`const ${macroLocal} = macroExports.${spec}; ret = ${evalExpression}`);
       }
     } catch (err) {
-      throw new Error(`Macro eval for \`${evalExpression}\` threw: ${err}`);
+      throw new Error(`Macro eval for \`${evalExpression}\` threw error: ${err}`);
     }
-    if (typeof ret !== 'string') {
-      throw new Error(`Macro eval returned ${typeof ret} not a string`);
+    if (typeof code !== 'string') {
+      throw new Error(`Macro eval returned ${typeof code} instead of a string: ${code}`);
     }
-    // TODO: See TODO comment above
-    insertClosedId({ start, end, str: ret });
+    insertClosed({ start, end, code });
   }
   console.log('macroSpecifiersToLocals', macroSpecifiersToLocals);
   console.log('macroLocalsToSpecifiers', macroLocalsToSpecifiers);
-  console.log('openIdentifierRanges', openIdentifierRanges);
-  console.log('closedIdentifierRanges', closedIdentifierRanges);
+  console.log('openIdentifierRanges', openMacroRangeStack);
+  console.log('closedIdentifierRanges', closedMacroRangeList);
 
   // TODO: Use the closedIdentifierRanges entries to return macro-free source
   return sourcecode;
 };
 
+/** @param {IntervalRange} range */
+const p = (range) => `[${range.start},${range.end}]`;
+
 /** @param {IntervalRange[]} list; @param {IntervalRange} range  */
 function intervalRangeListInsert(list, range) {
-  /** @param {IntervalRange} range */
-  const p = (range) => `[${range.start},${range.end}]`;
-  // Name: Insert range
-  const ins = range;
-  if (ins.start > ins.end) throw new Error('Given range start > end');
-  // Stored in reverse order so .forEach(splice()) doesn't mess up indices
-  const removeIndices = [];
+  if (range.start > range.end) {
+    throw new Error('Given range start > end');
+  }
   for (let i = 0; i < list.length; i++) {
-    // Name: Current range
-    const cur = list[i];
-    // Covering entire cur by ins
-    // TODO: Considering this an error and forcing queries/reads to REMOVE the
-    // entry would be good/less code... Could make any overlap illegal
-    if (ins.start <= cur.start && ins.end >= cur.end) {
-      console.log(`Upcoming insert of ${p(ins)} will cover/replace ${p(cur)}`);
-      removeIndices.unshift(i);
-      continue;
-    }
-    // Covered entire ins by cur
-    if (ins.start >= cur.start && ins.end <= cur.end) {
-      throw new Error(`Range ${p(ins)} would be covered by ${p(cur)}`);
-    }
+    const cursor = list[i];
     // Entirely before cur
-    if (ins.end < cur.start) {
-      console.log(`${p(ins)} < ${p(cur)}; inserting`);
-      list.splice(i, 0, ins);
-      removeIndices.forEach(ri => {
-        console.log(`Removing ${p(list[ri])}`);
-        list.splice(ri, 1);
-      });
+    if (range.end < cursor.start) {
+      console.log(`${p(range)} < ${p(cursor)}; inserting`);
+      list.splice(i, 0, range);
       return;
     }
     // Entirely after cur
-    if (ins.start > cur.end) {
-      console.log(`${p(ins)} > ${p(cur)}; next`);
+    if (range.start > cursor.end) {
+      console.log(`${p(range)} > ${p(cursor)}; next`);
       continue;
     }
     // Overlapping before (ib) or after (ia) cur
-      throw new Error(`Partial overlap of ${p(ins)} with ${p(cur)}`);
-    }
-  list.push(ins);
+    throw new Error(`Overlaps of ${p(range)} with ${p(cursor)}`);
+  }
+  list.push(range);
 }
 
-// TODO: Not query but "intervalRangeListSplice()"? I can remove them...
 /** @param {IntervalRange[]} list; @param {number} start; @param {number} end */
-function intervalRangeListQuery(list, start, end) {
-  /** @param {IntervalRange} range */
-  const p = (range) => `[${range.start},${range.end}]`;
-  if (start > end) throw new Error('Given range start > end');
-  const matching = [];
+function intervalRangeListSplice(list, start, end) {
+  if (start > end) {
+    throw new Error('Given range start > end');
+  }
+  // Stored in reverse order so the splice() loop doesn't mess up indices later
+  const removeIndices = [];
   for (let i = 0; i < list.length; i++) {
-    const cur = list[i];
+    const cursor = list[i];
     // OK
-    if (cur.start >= start && cur.end <= end) {
-      matching.push(cur);
+    if (cursor.start >= start && cursor.end <= end) {
+      removeIndices.unshift(i);
       continue;
     }
     // Entirely before
-    if (cur.end < start) continue;
+    if (cursor.end < start) continue;
     // Entirely after. We're passed the range. Exit.
-    if (cur.start > end) break;
-    throw new Error(`Query partially splits ${p(cur)}`);
+    if (cursor.start > end) break;
+    throw new Error(`Splice partially cuts ${p(cursor)}`);
   }
-  return matching;
+  // The indices are valid. It's safe to use [0]
+  const matches = removeIndices.map(ri => list.splice(ri, 1)[0]);
+  return matches;
 }
 
 export { replaceMacros };

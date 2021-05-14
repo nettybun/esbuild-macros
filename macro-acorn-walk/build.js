@@ -1,9 +1,10 @@
 /* eslint-disable no-unused-vars */
 import esbuild from 'esbuild';
-import { writeFileSync, readFileSync } from 'fs';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
 import { replaceMacros } from './packages/acorn-macros';
-
 import {
   styletakeoutMacro,
   // Alias so VSCode does syntax highlighting
@@ -11,9 +12,19 @@ import {
   injectGlobalImpl as injectGlobal
 } from './packages/styletakeout.macro/implementation';
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+injectGlobal`
+  body {
+    background-color: fuchsia;
+  }
+`;
+
 async function build() {
   const buildResult = await esbuild.build({
-    entryPoints: ['...'],
+    entryPoints: [
+      path.join(__dirname, '../macros/styletakeout.macro/example.ts'),
+    ],
     // Pass to buildResult instead
     write: false,
     format: 'esm',
@@ -38,7 +49,9 @@ async function build() {
   // simplification for _all_ macros instead of doing it in only styletakeout
   const bundleB = replaceMacros(bundleA, [
     styletakeoutMacro({
-      importEvals: {
+      // TODO: Name pending... depends if AST walking defers for object member
+      // expressions vs identifiers like "2021".
+      importObjects: {
         value: 2021,
         decl: {
           textBackground: 'textBackground',
@@ -59,5 +72,6 @@ async function build() {
     // sqlInjectionMacro({ ... }),
     // msMacro({ ... }),
   ]);
-  writeFileSync('./dist/out.js');
+  fs.writeFileSync('./dist/out-original.js', bundleA);
+  fs.writeFileSync('./dist/out-replaced-macros.js', bundleB);
 }

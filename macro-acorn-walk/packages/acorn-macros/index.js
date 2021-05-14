@@ -172,9 +172,8 @@ function intervalRangeListInsert(list, range) {
     if (ins.start >= cur.start && ins.end <= cur.end) {
       throw new Error(`Range ${p(ins)} would be covered by ${p(cur)}`);
     }
-    let ib, ia;
     // Entirely before cur
-    if ((ib = ins.end < cur.start)) {
+    if (ins.end < cur.start) {
       console.log(`${p(ins)} < ${p(cur)}; inserting`);
       list.splice(i, 0, ins);
       removeIndices.forEach(ri => {
@@ -184,7 +183,7 @@ function intervalRangeListInsert(list, range) {
       return;
     }
     // Entirely after cur
-    if ((ia = ins.start > cur.end)) {
+    if (ins.start > cur.end) {
       console.log(`${p(ins)} > ${p(cur)}; next`);
       continue;
     }
@@ -208,11 +207,10 @@ function intervalRangeListQuery(list, start, end) {
       matching.push(cur);
       continue;
     }
-    let cb, ca;
     // Entirely before
-    if ((cb = cur.end < start)) continue;
+    if (cur.end < start) continue;
     // Entirely after. We're passed the range. Exit.
-    if ((ca = cur.start > end)) break;
+    if (cur.start > end) break;
     throw new Error(`Query partially splits ${p(cur)}`);
   }
   return matching;

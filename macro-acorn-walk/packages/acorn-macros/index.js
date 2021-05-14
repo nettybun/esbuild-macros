@@ -189,11 +189,8 @@ function intervalRangeListInsert(list, range) {
       continue;
     }
     // Overlapping before (ib) or after (ia) cur
-    if (!ib || !ia) {
       throw new Error(`Partial overlap of ${p(ins)} with ${p(cur)}`);
     }
-    throw new Error('Unreachable');
-  }
   list.push(ins);
 }
 
@@ -216,9 +213,7 @@ function intervalRangeListQuery(list, start, end) {
     if ((cb = cur.end < start)) continue;
     // Entirely after. We're passed the range. Exit.
     if ((ca = cur.start > end)) break;
-    if (!cb) throw new Error(`Query partial enters into ${p(cur)}`);
-    if (!ca) throw new Error(`Query partial leaves out ${p(cur)}`);
-    throw new Error('Unreachable');
+    throw new Error(`Query partially splits ${p(cur)}`);
   }
   return matching;
 }

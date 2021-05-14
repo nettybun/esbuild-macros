@@ -16,7 +16,7 @@ function injectGlobalImpl(statics, ...templateVariables) {
 /** @typedef {import('../../acorn-macros/index').Macro} Macro */
 
 /** @type {(options: {}) => Macro} */
-const styleTakeoutMacro = (options) => {
+const styletakeoutMacro = (options) => {
   const importObjects = options.importObjects ?? {};
   /** @type {Macro} */
   return {
@@ -46,4 +46,4 @@ const styleTakeoutMacro = (options) => {
   };
 };
 
-export { styleTakeoutMacro, cssImpl, injectGlobalImpl };
+export { styletakeoutMacro, cssImpl, injectGlobalImpl };

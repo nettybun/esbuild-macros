@@ -4,13 +4,13 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
-import { replaceMacros } from './packages/acorn-macros';
+import { replaceMacros } from './packages/acorn-macros/index.js';
 import {
   styletakeoutMacro,
   // Alias so VSCode does syntax highlighting
   cssImpl as css,
   injectGlobalImpl as injectGlobal
-} from './packages/styletakeout.macro/implementation';
+} from './packages/styletakeout.macro/implementation/index.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -34,11 +34,15 @@ async function build() {
       {
         name: 'skip-macros',
         setup(build) {
-          build.onLoad({ filter: /\.macro$/ }, args => {
+          build.onLoad({ filter: /.+\.macro$/ }, args => {
+            console.log('Skip as external:', args.path);
             return { path: args.path, external: true };
           });
         },
       },
+    ],
+    external: [
+      'styletakeout.macro', // Node v16.1.0 doesn't like plugins above?
     ],
     bundle: true,
     minify: true,
@@ -64,6 +68,11 @@ async function build() {
         classes: {
           center: css`text-align: center;`,
         },
+        sizes: {
+          _03: '30px',
+          _04: '40px',
+          _05: '50px',
+        },
       },
       outputFile: './dist/out.css',
       verbose: true,
@@ -75,3 +84,4 @@ async function build() {
   fs.writeFileSync('./dist/out-original.js', bundleA);
   fs.writeFileSync('./dist/out-replaced-macros.js', bundleB);
 }
+build();

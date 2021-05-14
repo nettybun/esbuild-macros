@@ -3,14 +3,30 @@
 // you might want to support other types too, such as unary expressions,
 // function calls, etc.
 
-const cssImpl = () => {};
-const injectGlobalImpl = () => {};
+function cssImpl(statics, ...templateVariables) {
+  console.log('cssImpl');
+  return '"CSS"'; // Put a string back in the sourcecode
+}
 
+function injectGlobalImpl(statics, ...templateVariables) {
+  console.log('injectGlobalImpl');
+  return ''; // Put literally nothing back
+}
+
+/** @typedef {import('../../acorn-macros/index').Macro} Macro */
+
+/** @type {(options: {}) => Macro} */
 const styleTakeoutMacro = (options) => {
-  const objectExports = options.objectExports ?? {};
+  const importObjects = options.importObjects ?? {};
+  /** @type {Macro} */
   return {
     importSource: 'styletakeout.macro',
-    rangeFromAST: (importSpecifier, identifierAncestors) => {
+    importSpecifierImpls: {
+      css: cssImpl,
+      injectGlobal: injectGlobalImpl,
+      ...importObjects,
+    },
+    importSpecifierRangeFn: (importSpecifier, identifierAncestors) => {
       const node = identifierAncestors[identifierAncestors.length - 1];
       const nodeParent = identifierAncestors[identifierAncestors.length - 2];
       if ('css' === importSpecifier || 'injectGlobal' === importSpecifier) {
@@ -20,17 +36,12 @@ const styleTakeoutMacro = (options) => {
         const range = nodeParent;
         return { start: range.start, end: range.end };
       }
-      if (importSpecifier in objectExports) {
+      if (importSpecifier in importObjects) {
         // TODO: Read up the ancestor path to member expression.
-        const range = {};
+        const range = node;
         return { start: range.start, end: range.end };
       }
       throw new Error(`Unknown import "${importSpecifier}" for styletakeout.macro`);
-    },
-    exports: {
-      css: cssImpl,
-      injectGlobal: injectGlobalImpl,
-      ...objectExports,
     },
   };
 };

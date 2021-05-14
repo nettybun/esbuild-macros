@@ -1,11 +1,11 @@
 import acorn from 'acorn';
 import * as walk from 'acorn-walk';
 
-/** @typedef {{ importSource: string, rangeFromAST: MacroRangeResolver, exports: { [name: string]: any } }} Macro */
-/** @typedef {{ [name: string]: any }} MacroExports */
-/** @typedef {{ start: number, end: number }} IntervalRange */
-/** @typedef {(specifier:string, ancestors:acorn.Node[]) => IntervalRange} MacroRangeResolver */
+/** @typedef {{ importSource: string, importSpecifierImpls: MacroImpls, importSpecifierRangeFn: MacroRangeFn }} Macro */
+/** @typedef {{ [name: string]: any }} MacroImpls */
+/** @typedef {(specifier:string, ancestors:acorn.Node[]) => IntervalRange} MacroRangeFn */
 
+/** @typedef {{ start: number, end: number }} IntervalRange */
 /** @typedef {IntervalRange & { macroLocal: string }} OpenMacroRange */
 /** @typedef {IntervalRange & { code: string }} ClosedMacroRange */
 
@@ -13,18 +13,18 @@ import * as walk from 'acorn-walk';
 const replaceMacros = (sourcecode, macros) => {
   /** @type {{ [importSource: string]: number }} */
   const macroIndices = {};
-  /** @type {{ [importSource: string]: MacroRangeResolver }} */
-  const macroRangeFromAST = {};
-  /** @type {MacroExports} */
-  const macroExports = {};
+  /** @type {{ [importSource: string]: MacroRangeFn }} */
+  const macroToSpecRangeFns = {};
+  /** @type {MacroImpls} */
+  const macroToSpecImpls = {};
   macros.forEach((macro, i) => {
     const name = macro.importSource;
     if (macroIndices[name]) {
       throw new Error(`Duplicate macro "${name}" at indices ${macroIndices[name]} and ${i}`);
     }
     macroIndices[name] = i;
-    macroRangeFromAST[name] = macro.rangeFromAST;
-    macroExports[name] = macro.exports;
+    macroToSpecRangeFns[name] = macro.importSpecifierRangeFn;
+    macroToSpecImpls[name] = macro.importSpecifierImpls;
   });
   /** @type {{ [macro: string]: { [spec: string]: string[] } }} string[] is of local variable names */
   const macroSpecifiersToLocals = {};
@@ -93,7 +93,7 @@ const replaceMacros = (sourcecode, macros) => {
       ancestors.forEach((n, i) => {
         console.log(`  - ${'  '.repeat(i)}${n.type}:${JSON.stringify(n)}`);
       });
-      const resolver = macroRangeFromAST[meta.source];
+      const resolver = macroToSpecRangeFns[meta.source];
       const { start, end } = resolver(meta.specifier, ancestors);
       // Move items from open -> closed _BEFORE_ adding to the open stack
       closeOpenIdsUpTo(start);
@@ -129,7 +129,8 @@ const replaceMacros = (sourcecode, macros) => {
     try {
       // Running in a new closure so `macroLocal` doesn't conflict with us
       {
-        eval(`const ${macroLocal} = macroExports.${spec}; ret = ${evalExpression}`);
+        // !!! Editor symbol renaming doesn't work in the eval string
+        eval(`const ${macroLocal} = macroToSpecImpls.${spec}; code = ${evalExpression}`);
       }
     } catch (err) {
       throw new Error(`Macro eval for \`${evalExpression}\` threw error: ${err}`);

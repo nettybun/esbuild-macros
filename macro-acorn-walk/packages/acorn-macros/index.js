@@ -139,7 +139,7 @@ const replaceMacros = (code, macros, ast) => {
     evalMetadata.snipRawStart = start;
     evalMetadata.snipRawEnd = end;
     // Work backwards to not mess up indices
-    for (const range of spliceClosed(start, end).reverse()) {
+    for (const range of spliceClosed(start, end)) {
       evalExpression
         = evalExpression.slice(0, range.start - start)
         + range.replacement
@@ -174,7 +174,7 @@ const replaceMacros = (code, macros, ast) => {
   console.log('closedMacroRangeList', closedMacroRangeList);
 
   // Work backwards to not mess up indices
-  for (const range of closedMacroRangeList.reverse()) {
+  for (const range of closedMacroRangeList) {
     code
       = code.slice(0, range.start)
       + range.replacement
@@ -230,10 +230,9 @@ function intervalRangeListSplice(list, start, end) {
     if (cursor.start >= end) break;
     throw new Error(`Splice partially cuts ${p(cursor)}`);
   }
-  /** @type {IntervalRange[]} */
-  const matches = [];
   // The indices are valid. It's safe to use [0]
-  removeIndices.forEach(ri => matches.unshift(list.splice(ri, 1)[0]));
+  // This matches array is BACKWARDS
+  const matches = removeIndices.map(ri => list.splice(ri, 1)[0]);
   return matches;
 }
 

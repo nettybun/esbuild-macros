@@ -7,7 +7,7 @@ import { evalMetadata } from '../../acorn-macros/index.js';
 
 // Side effect: Start a stylesheet immediately
 let sheet = '';
-let styleCount = 0;
+let count = 0;
 
 function interpolateTemplateString(quasis, expressions) {
   let string = '';
@@ -19,17 +19,21 @@ function interpolateTemplateString(quasis, expressions) {
 }
 
 function cssImpl(statics, ...templateVariables) {
+  count++;
   const string = interpolateTemplateString(statics, templateVariables);
-  sheet += `css: ${styleCount++}: ${string}\n`;
+  sheet += `css: ${count}: ${string}\n`;
   console.log('cssImpl', string);
+  // Location might not be provided if called outside of replaceMacros()
+  const location = `[${evalMetadata.snipRawStart ?? '?'},${evalMetadata.snipRawEnd ?? '?'})`;
   // Put back a string. Also! Consider str.replaceAll('"', '\\"') as needed
-  return `"css-${styleCount}-${evalMetadata.snipRawStart}-${evalMetadata.snipRawEnd}"`;
+  return `"css-${count}-${location}"`;
 }
 
 function injectGlobalImpl(statics, ...templateVariables) {
+  count++;
   const string = interpolateTemplateString(statics, templateVariables);
+  sheet += `injectGlobal: ${count}: ${string}\n`;
   console.log('injectGlobalImpl', string);
-  sheet += `injectGlobal: ${styleCount++}: ${string}\n`;
   // Put literally nothing back
   return '';
 }

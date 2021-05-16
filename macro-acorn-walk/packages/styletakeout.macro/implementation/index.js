@@ -3,11 +3,18 @@
 // you might want to support other types too, such as unary expressions,
 // function calls, etc.
 
-import { evalMetadata } from '../../acorn-macros/index.js';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import { evalMeta } from '../../acorn-macros/index.js';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+// TODO: Implement caching via hashing and naming and etc etc like styletakeout
+// does in its Babel-version.
 
 // Side effect: Start a stylesheet immediately
 let sheet = '';
-let count = 0;
 
 function interpolateTemplateString(quasis, expressions) {
   let string = '';
@@ -19,20 +26,18 @@ function interpolateTemplateString(quasis, expressions) {
 }
 
 function cssImpl(statics, ...templateVariables) {
-  count++;
   const string = interpolateTemplateString(statics, templateVariables);
-  sheet += `css: ${count}: ${string}\n`;
+  sheet += `css: ${string}\n`;
   console.log('cssImpl', string);
   // Location might not be provided if called outside of replaceMacros()
-  const location = `[${evalMetadata.snipRawStart ?? '?'},${evalMetadata.snipRawEnd ?? '?'})`;
+  const location = `[${evalMeta.snipRawStart ?? '?'},${evalMeta.snipRawEnd ?? '?'})`;
   // Put back a string. Also! Consider str.replaceAll('"', '\\"') as needed
-  return `"css-${count}-${location}"`;
+  return `"css-${location}"`;
 }
 
 function injectGlobalImpl(statics, ...templateVariables) {
-  count++;
   const string = interpolateTemplateString(statics, templateVariables);
-  sheet += `injectGlobal: ${count}: ${string}\n`;
+  sheet += `injectGlobal: ${string}\n`;
   console.log('injectGlobalImpl', string);
   // Put literally nothing back
   return '';
@@ -45,7 +50,6 @@ const styletakeoutMacro = (options) => {
   const importObjects = options.importObjects ?? {};
   /** @type {Macro} */
   return {
-    // TODO: hookPre, hookPost? To let macros do some cleanup
     importSource: 'styletakeout.macro',
     importSpecifierImpls: {
       css: cssImpl,
@@ -69,6 +73,11 @@ const styletakeoutMacro = (options) => {
         return { start: top.start, end: top.end };
       }
       throw new Error(`Unknown import "${importSpecifier}" for styletakeout.macro`);
+    },
+    hookPost() {
+      const outPath = path.join(__dirname, '../../../', options.outputFile);
+      console.log(`CSS written to ${outPath}`);
+      fs.writeFileSync(outPath, sheet);
     },
   };
 };

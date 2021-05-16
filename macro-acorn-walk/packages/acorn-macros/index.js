@@ -1,7 +1,14 @@
 import * as acorn from 'acorn';
 import * as walk from 'acorn-walk';
 
-/** @typedef {{ importSource: string, importSpecifierImpls: MacroImpls, importSpecifierRangeFn: MacroRangeFn }} Macro */
+/**
+@typedef {{
+  importSource: string
+  importSpecifierImpls: MacroImpls
+  importSpecifierRangeFn: MacroRangeFn
+  hookPre?: (originalCode: string) => void,
+  hookPost?: (replacedCode: string) => void,
+}} Macro */
 /** @typedef {{ [name: string]: any }} MacroImpls */
 /** @typedef {(specifier:string, ancestors:acorn.Node[]) => IntervalRange} MacroRangeFn */
 
@@ -12,7 +19,18 @@ import * as walk from 'acorn-walk';
 // This is updated every replacement before the eval so macros can access this
 // metadata through this object. I don't provide sourcemapped line/col/filename
 // info that's lost during esbuild since it's expensive to recover
-const evalMetadata = {};
+/** @type {typeof evalMetadataReset} */
+// @ts-ignore
+const evalMeta = {};
+// Can be used by macro implementations during their call in eval()
+const evalMetadataReset = {
+  snipRaw: '',
+  snipRawStart: 0,
+  snipRawEnd: 0,
+  snipEval: '',
+  macroSource: '',
+  macroSpecifier: '',
+};
 
 /** @param {string} code; @param {Macro[]} macros; @param {acorn.Node} [ast] */
 const replaceMacros = (code, macros, ast) => {
@@ -22,6 +40,8 @@ const replaceMacros = (code, macros, ast) => {
   const macroToSpecifierRangeFns = {};
   /** @type {MacroImpls} */
   const macroToSpecifierImpls = {};
+  const macroHooksPre = [];
+  const macroHooksPost = [];
   macros.forEach((macro, i) => {
     const name = macro.importSource;
     if (macroIndices[name]) {
@@ -30,6 +50,8 @@ const replaceMacros = (code, macros, ast) => {
     macroIndices[name] = i;
     macroToSpecifierRangeFns[name] = macro.importSpecifierRangeFn;
     macroToSpecifierImpls[name] = macro.importSpecifierImpls;
+    if (macro.hookPre) macroHooksPre.push(macro.hookPre);
+    if (macro.hookPost) macroHooksPost.push(macro.hookPost);
   });
   /** @type {{ [macro: string]: { [spec: string]: string[] } }} string[] is of local variable names */
   const macroSpecifierToLocals = {};
@@ -59,17 +81,10 @@ const replaceMacros = (code, macros, ast) => {
   if (!ast) {
     ast = acorn.parse(code, { ecmaVersion: 'latest', sourceType: 'module' });
   }
-  // Can be used by macro implementations during their call in eval()
-  const evalMetadataReset = {
-    // TODO: Enable this
-    // code,
-    snipRaw: '',
-    snipRawStart: 0,
-    snipRawEnd: 0,
-    snipEval: '',
-    macroSource: '',
-    macroSpecifier: '',
-  };
+
+  // Call macro.hookPre with original code
+  macroHooksPre.forEach(hook => hook(code));
+
   // Import statements must come first as per ECMAScript specification but this
   // isn't enforced by Acorn, so throw if an import is after an identifier.
   let seenIndentifier = false;
@@ -134,38 +149,38 @@ const replaceMacros = (code, macros, ast) => {
   function closeOpenId(open) {
     const { start, end, macroLocal } = open;
     console.log(`Closing open macro range: ${p(open)}`);
-    let evalExpression = code.slice(start, end);
-    evalMetadata.snipRaw = evalExpression;
-    evalMetadata.snipRawStart = start;
-    evalMetadata.snipRawEnd = end;
+    let evalSnip = code.slice(start, end);
+    evalMeta.snipRaw = evalSnip;
+    evalMeta.snipRawStart = start;
+    evalMeta.snipRawEnd = end;
     // Work backwards to not mess up indices
     for (const range of spliceClosed(start, end)) {
-      evalExpression
-        = evalExpression.slice(0, range.start - start)
+      evalSnip
+        = evalSnip.slice(0, range.start - start)
         + range.replacement
-        + evalExpression.slice(range.end - start);
+        + evalSnip.slice(range.end - start);
     }
     const { source, specifier } = macroLocalToSpecifiers[macroLocal];
-    evalMetadata.snipEval = evalExpression;
-    evalMetadata.macroSource = source;
-    evalMetadata.macroSpecifier = specifier;
-    evalMetadata.macroSpecifierLocal = macroLocal;
-    console.log('Macro eval:', evalMetadata);
+    evalMeta.snipEval = evalSnip;
+    evalMeta.macroSource = source;
+    evalMeta.macroSpecifier = specifier;
+    evalMeta.macroSpecifierLocal = macroLocal;
+    console.log('Macro eval:', evalMeta);
     let evalResult;
     // For nicer error messages; only used in eval string below
     let macro = macroToSpecifierImpls;
-    evalExpression = `const ${macroLocal} = macro["${source}"]["${specifier}"]; ${evalExpression}`;
+    evalSnip = `const ${macroLocal} = macro["${source}"]["${specifier}"]; ${evalSnip}`;
     try {
       // Running in a new closure so `macroLocal` doesn't conflict with us
-      { evalResult = eval(evalExpression); }
+      { evalResult = eval(evalSnip); }
     } catch (err) {
-      throw new Error(`Macro eval for:\n${evalExpression}\n${err}`);
+      throw new Error(`Macro eval for:\n${evalSnip}\n${err}`);
     }
     console.log('Macro eval result:', evalResult);
     if (typeof evalResult !== 'string') {
       throw new Error(`Macro eval returned ${typeof evalResult} instead of a string`);
     }
-    Object.assign(evalMetadata, evalMetadataReset);
+    Object.assign(evalMeta, evalMetadataReset);
     insertClosed({ start, end, replacement: evalResult });
   }
   console.log('macroSpecifierToLocals', macroSpecifierToLocals);
@@ -180,6 +195,8 @@ const replaceMacros = (code, macros, ast) => {
       + range.replacement
       + code.slice(range.end);
   }
+  // Call macro.hookPost with macro-replaced code
+  macroHooksPost.forEach(hook => hook(code));
   return code;
 };
 
@@ -235,4 +252,4 @@ function intervalRangeListSplice(list, start, end) {
   return matches;
 }
 
-export { replaceMacros, evalMetadata };
+export { replaceMacros, evalMeta };

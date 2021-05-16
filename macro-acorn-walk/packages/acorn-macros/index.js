@@ -183,9 +183,8 @@ const replaceMacros = (code, macros, ast) => {
   return code;
 };
 
-// TODO: Ohno. It's [,)
 /** @param {{ start: number, end: number }} x */
-const p = (x) => `[${x.start},${x.end}]`;
+const p = (x) => `[${x.start},${x.end})`;
 
 /** @param {IntervalRange[]} list; @param {IntervalRange} range  */
 function intervalRangeListInsert(list, range) {
@@ -195,13 +194,13 @@ function intervalRangeListInsert(list, range) {
   for (let i = 0; i < list.length; i++) {
     const cursor = list[i];
     // Entirely before cur
-    if (range.end < cursor.start) {
+    if (range.end <= cursor.start) {
       console.log(`${p(range)} < ${p(cursor)}; inserting`);
       list.splice(i, 0, range);
       return;
     }
     // Entirely after cur
-    if (range.start > cursor.end) {
+    if (range.start >= cursor.end) {
       console.log(`${p(range)} > ${p(cursor)}; next`);
       continue;
     }
@@ -226,9 +225,9 @@ function intervalRangeListSplice(list, start, end) {
       continue;
     }
     // Entirely before
-    if (cursor.end < start) continue;
+    if (cursor.end <= start) continue;
     // Entirely after. We're passed the range. Exit.
-    if (cursor.start > end) break;
+    if (cursor.start >= end) break;
     throw new Error(`Splice partially cuts ${p(cursor)}`);
   }
   /** @type {IntervalRange[]} */

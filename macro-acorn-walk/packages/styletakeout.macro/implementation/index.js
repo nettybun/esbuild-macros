@@ -3,9 +3,13 @@
 // you might want to support other types too, such as unary expressions,
 // function calls, etc.
 
+// Side effect: Start a stylesheet immediately
+const sheet = '';
+
 function cssImpl(statics, ...templateVariables) {
   console.log('cssImpl');
-  return '"CSS"'; // Put a string back in the sourcecode
+  // TODO: importObject will eval "50px" to 50px (no quotes...)
+  return 'CSS'; // Put a string back in the sourcecode?
 }
 
 function injectGlobalImpl(statics, ...templateVariables) {
@@ -20,6 +24,7 @@ const styletakeoutMacro = (options) => {
   const importObjects = options.importObjects ?? {};
   /** @type {Macro} */
   return {
+    // TODO: hookPre, hookPost? To let macros do some cleanup
     importSource: 'styletakeout.macro',
     importSpecifierImpls: {
       css: cssImpl,
@@ -27,19 +32,20 @@ const styletakeoutMacro = (options) => {
       ...importObjects,
     },
     importSpecifierRangeFn: (importSpecifier, identifierAncestors) => {
-      const node = identifierAncestors[identifierAncestors.length - 1];
-      const nodeParent = identifierAncestors[identifierAncestors.length - 2];
+      const [node, nodeParent, ...nodeRest] = [...identifierAncestors].reverse();
       if ('css' === importSpecifier || 'injectGlobal' === importSpecifier) {
         if (nodeParent.type !== 'TaggedTemplateExpression') {
-          throw 'Macros css and injectGlobal must be called as tag template functions';
+          throw new Error('Macros css and injectGlobal must be called as tag template functions');
         }
-        const range = nodeParent;
-        return { start: range.start, end: range.end };
+        return { start: nodeParent.start, end: nodeParent.end };
       }
       if (importSpecifier in importObjects) {
-        // TODO: Read up the ancestor path to member expression.
-        const range = node;
-        return { start: range.start, end: range.end };
+        if (nodeParent.type !== 'MemberExpression') {
+          throw new Error(`Import object ${importSpecifier} must accessed as an object: ${node.name}.x.y.z`);
+        }
+        let top = nodeParent;
+        for (const node of nodeRest) if (node.type === 'MemberExpression') top = node;
+        return { start: top.start, end: top.end };
       }
       throw new Error(`Unknown import "${importSpecifier}" for styletakeout.macro`);
     },

@@ -1,15 +1,15 @@
-import { decl, colours, css, classes } from 'styletakeout.macro';
+import { decl, sizes, colours, css, classes } from 'styletakeout.macro';
 import { otherStyles } from './example-imported.js';
 
 /* eslint-disable @typescript-eslint/no-unused-vars */
 
-const exportedVariable = colours.blue._800;
+const exportedVariable = colours.black;
 const styles = css`
   padding: 15px;
-  background-color: ${colours.blue._700};
-  margin-top: ${decl.size._05};
-  margin-left: ${decl.size._04};
-  margin-right: ${decl.size._03};
+  background-color: ${colours.black};
+  margin-top: ${sizes._05};
+  margin-left: ${sizes._04};
+  margin-right: ${sizes._03};
 `;
 
 // TODO: Ask Evan if this is safe for their upcoming lexer rewrite

@@ -58,15 +58,19 @@ async function build() {
       importObjects: {
         value: 2021,
         decl: {
+          pageBackground: 'pageBackground',
           textBackground: 'textBackground',
           textColour: 'textColour',
         },
         colours: {
-          grey: '#888',
           black: '#000',
         },
         classes: {
           center: css`text-align: center;`,
+          text: {
+            _0_xs: css`font-size: 0.75rem;`,
+            _1_sm: css`font-size: 0.875rem;`,
+          },
         },
         sizes: {
           _03: '30px',

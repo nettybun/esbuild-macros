@@ -89,14 +89,14 @@ const replaceMacros = (sourcecode, macros) => {
       console.log('Identifier', node.name);
       const meta = macroLocalsToSpecifiers[node.name];
       if (!meta) return;
+      // Move items from open -> closed _BEFORE_ adding to the open stack
+      closeOpenIdsUpTo(node.start);
       console.log('Identifier matches', meta.source, meta.specifier);
       ancestors.forEach((n, i) => {
-        console.log(`  - ${'  '.repeat(i)}${n.type}`);
+        console.log(`  - ${'  '.repeat(i)}${n.type} ${p(n)}`);
       });
       const resolver = macroToSpecRangeFns[meta.source];
       const { start, end } = resolver(meta.specifier, ancestors);
-      // Move items from open -> closed _BEFORE_ adding to the open stack
-      closeOpenIdsUpTo(start);
       openMacroRangeStack.push({ start, end, macroLocal: node.name });
     },
   });
@@ -117,29 +117,33 @@ const replaceMacros = (sourcecode, macros) => {
   /** @param {OpenMacroRange} open */
   function closeOpenId(open) {
     const { start, end, macroLocal } = open;
+    console.log(`Closing open macro range: ${p(open)}`);
     let evalExpression = sourcecode.slice(start, end);
-    console.log('SOURCECODE', evalExpression);
+    console.log('Source code slice:', evalExpression);
     for (const edit of spliceClosed(start, end)) {
       evalExpression
-        = evalExpression.slice(start, edit.start - 1)
+        = evalExpression.slice(0, edit.start - start)
         + edit.code
-        + evalExpression.slice(edit.end);
+        + evalExpression.slice(edit.end - start);
     }
     let code;
     const { source, specifier } = macroLocalsToSpecifiers[macroLocal];
     // !!! Editor symbol renaming doesn't work in the eval string
     evalExpression = `const ${macroLocal} = macroToSpecImpls["${source}"].${specifier}; code = ${evalExpression}`;
-    console.log('EVAL', evalExpression);
+    console.log('Eval expression:', evalExpression);
     try {
       // Running in a new closure so `macroLocal` doesn't conflict with us
       { eval(evalExpression); }
     } catch (err) {
-      throw new Error(`Macro eval for \`${evalExpression}\` threw error: ${err}`);
+      throw new Error(`Macro eval for:\n${evalExpression}\n${err}`);
     }
+    console.log('Returned code:', code);
+    // TODO: Remove? Let them put anything in?
     if (typeof code !== 'string') {
-      throw new Error(`Macro eval returned ${typeof code} instead of a string: ${code}`);
+      throw new Error(`Macro eval returned ${typeof code} instead of a string`);
     }
-    insertClosed({ start, end, code });
+    // TODO: Handle a string vs number as: typeof === string ? `"${c}"` : c;
+    insertClosed({ start, end, code: `"${code}"` });
   }
   console.log('macroSpecifiersToLocals', macroSpecifiersToLocals);
   console.log('macroLocalsToSpecifiers', macroLocalsToSpecifiers);
@@ -150,8 +154,8 @@ const replaceMacros = (sourcecode, macros) => {
   return sourcecode;
 };
 
-/** @param {IntervalRange} range */
-const p = (range) => `[${range.start},${range.end}]`;
+/** @param {{ start: number, end: number }} x */
+const p = (x) => `[${x.start},${x.end}]`;
 
 /** @param {IntervalRange[]} list; @param {IntervalRange} range  */
 function intervalRangeListInsert(list, range) {

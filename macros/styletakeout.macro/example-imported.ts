@@ -4,7 +4,7 @@ import { decl, sizes, css } from 'styletakeout.macro';
 
 const exportedVariable = sizes._04;
 const otherStyles = css`
-  padding: ${decl.size._05};
+  padding: ${sizes._05};
 `;
 
 export { otherStyles };

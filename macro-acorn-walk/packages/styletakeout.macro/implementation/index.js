@@ -3,18 +3,35 @@
 // you might want to support other types too, such as unary expressions,
 // function calls, etc.
 
+import { evalMetadata } from '../../acorn-macros/index.js';
+
 // Side effect: Start a stylesheet immediately
-const sheet = '';
+let sheet = '';
+let styleCount = 0;
+
+function interpolateTemplateString(quasis, expressions) {
+  let string = '';
+  for (let i = 0; i < expressions.length; i++) {
+    string += quasis[i] + expressions[i];
+  }
+  string += quasis[quasis.length - 1];
+  return string.replace(/\n?\s*/g, '');
+}
 
 function cssImpl(statics, ...templateVariables) {
-  console.log('cssImpl');
-  // TODO: importObject will eval "50px" to 50px (no quotes...)
-  return 'CSS'; // Put a string back in the sourcecode?
+  const string = interpolateTemplateString(statics, templateVariables);
+  sheet += `css: ${styleCount++}: ${string}\n`;
+  console.log('cssImpl', string);
+  // Put back a string. Also! Consider str.replaceAll('"', '\\"') as needed
+  return `"css-${styleCount}-${evalMetadata.snipRawStart}-${evalMetadata.snipRawEnd}"`;
 }
 
 function injectGlobalImpl(statics, ...templateVariables) {
-  console.log('injectGlobalImpl');
-  return ''; // Put literally nothing back
+  const string = interpolateTemplateString(statics, templateVariables);
+  console.log('injectGlobalImpl', string);
+  sheet += `injectGlobal: ${styleCount++}: ${string}\n`;
+  // Put literally nothing back
+  return '';
 }
 
 /** @typedef {import('../../acorn-macros/index').Macro} Macro */

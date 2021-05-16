@@ -7,29 +7,34 @@ import * as walk from 'acorn-walk';
 
 /** @typedef {{ start: number, end: number }} IntervalRange */
 /** @typedef {IntervalRange & { macroLocal: string }} OpenMacroRange */
-/** @typedef {IntervalRange & { code: string }} ClosedMacroRange */
+/** @typedef {IntervalRange & { replacement: string }} ClosedMacroRange */
 
-/** @param {string} sourcecode; @param {Macro[]} macros */
-const replaceMacros = (sourcecode, macros) => {
+// This is updated every replacement before the eval so macros can access this
+// metadata through this object. I don't provide sourcemapped line/col/filename
+// info that's lost during esbuild since it's expensive to recover
+const evalMetadata = {};
+
+/** @param {string} code; @param {Macro[]} macros; @param {acorn.Node} [ast] */
+const replaceMacros = (code, macros, ast) => {
   /** @type {{ [importSource: string]: number }} */
   const macroIndices = {};
   /** @type {{ [importSource: string]: MacroRangeFn }} */
-  const macroToSpecRangeFns = {};
+  const macroToSpecifierRangeFns = {};
   /** @type {MacroImpls} */
-  const macroToSpecImpls = {};
+  const macroToSpecifierImpls = {};
   macros.forEach((macro, i) => {
     const name = macro.importSource;
     if (macroIndices[name]) {
       throw new Error(`Duplicate macro "${name}" at indices ${macroIndices[name]} and ${i}`);
     }
     macroIndices[name] = i;
-    macroToSpecRangeFns[name] = macro.importSpecifierRangeFn;
-    macroToSpecImpls[name] = macro.importSpecifierImpls;
+    macroToSpecifierRangeFns[name] = macro.importSpecifierRangeFn;
+    macroToSpecifierImpls[name] = macro.importSpecifierImpls;
   });
   /** @type {{ [macro: string]: { [spec: string]: string[] } }} string[] is of local variable names */
-  const macroSpecifiersToLocals = {};
+  const macroSpecifierToLocals = {};
   /** @type {{ [local: string]: { source: string, specifier: string } }} source is the macro name */
-  const macroLocalsToSpecifiers = {};
+  const macroLocalToSpecifiers = {};
 
   // Identifier ranges that could have macros in them. We've started parsing
   // their range (given by rangeFromAST) but haven't reached their end yet.
@@ -49,12 +54,22 @@ const replaceMacros = (sourcecode, macros) => {
     // @ts-ignore JSDoc doesn't do <T extends IntervalRange[]>...
     intervalRangeListSplice(closedMacroRangeList, start, end);
 
-  const ast = typeof sourcecode === 'string'
-    ? acorn.parse(sourcecode, { ecmaVersion: 'latest', sourceType: 'module' })
-    : sourcecode;
-  if (!ast || ast.type !== 'Program') {
-    throw new Error('Provided sourcecode must JS code string or an Acorn AST');
+  // This doesn't have to be a start AST node like node.type === "Program". It
+  // can be anything. That's useful to someone somewhere.
+  if (!ast) {
+    ast = acorn.parse(code, { ecmaVersion: 'latest', sourceType: 'module' });
   }
+  // Can be used by macro implementations during their call in eval()
+  const evalMetadataReset = {
+    // TODO: Enable this
+    // code,
+    snipRaw: '',
+    snipRawStart: 0,
+    snipRawEnd: 0,
+    snipEval: '',
+    macroSource: '',
+    macroSpecifier: '',
+  };
   // Import statements must come first as per ECMAScript specification but this
   // isn't enforced by Acorn, so throw if an import is after an identifier.
   let seenIndentifier = false;
@@ -73,21 +88,22 @@ const replaceMacros = (sourcecode, macros) => {
       console.log(`Found import statement ${node.start}->${node.end} ${sourceName}`);
       if (!sourceName.endsWith('.macro') || !(sourceName in macroIndices)) return;
       node.specifiers.forEach(n => {
-        const specImportMap = macroSpecifiersToLocals[sourceName] || (macroSpecifiersToLocals[sourceName] = {});
+        const specImportMap = macroSpecifierToLocals[sourceName] || (macroSpecifierToLocals[sourceName] = {});
         const specLocals = specImportMap[n.imported.name] || (specImportMap[n.imported.name] = []);
         if (specLocals.includes(n.local.name)) return;
         specLocals.push(n.local.name);
-        macroLocalsToSpecifiers[n.local.name] = {
+        macroLocalToSpecifiers[n.local.name] = {
           source: sourceName,
           specifier: n.imported.name,
         };
       });
+      insertClosed({ start: node.start, end: node.end, replacement: '' });
     },
     /** @param {IdentifierNode} node */
     Identifier(node, state, ancestors) {
       seenIndentifier = true;
       console.log('Identifier', node.name);
-      const meta = macroLocalsToSpecifiers[node.name];
+      const meta = macroLocalToSpecifiers[node.name];
       if (!meta) return;
       // Move items from open -> closed _BEFORE_ adding to the open stack
       closeOpenIdsUpTo(node.start);
@@ -95,7 +111,7 @@ const replaceMacros = (sourcecode, macros) => {
       ancestors.forEach((n, i) => {
         console.log(`  - ${'  '.repeat(i)}${n.type} ${p(n)}`);
       });
-      const resolver = macroToSpecRangeFns[meta.source];
+      const resolver = macroToSpecifierRangeFns[meta.source];
       const { start, end } = resolver(meta.specifier, ancestors);
       openMacroRangeStack.push({ start, end, macroLocal: node.name });
     },
@@ -118,42 +134,56 @@ const replaceMacros = (sourcecode, macros) => {
   function closeOpenId(open) {
     const { start, end, macroLocal } = open;
     console.log(`Closing open macro range: ${p(open)}`);
-    let evalExpression = sourcecode.slice(start, end);
-    console.log('Source code slice:', evalExpression);
-    for (const edit of spliceClosed(start, end)) {
+    let evalExpression = code.slice(start, end);
+    evalMetadata.snipRaw = evalExpression;
+    evalMetadata.snipRawStart = start;
+    evalMetadata.snipRawEnd = end;
+    // Work backwards to not mess up indices
+    for (const range of spliceClosed(start, end).reverse()) {
       evalExpression
-        = evalExpression.slice(0, edit.start - start)
-        + edit.code
-        + evalExpression.slice(edit.end - start);
+        = evalExpression.slice(0, range.start - start)
+        + range.replacement
+        + evalExpression.slice(range.end - start);
     }
-    let code;
-    const { source, specifier } = macroLocalsToSpecifiers[macroLocal];
-    // !!! Editor symbol renaming doesn't work in the eval string
-    evalExpression = `const ${macroLocal} = macroToSpecImpls["${source}"].${specifier}; code = ${evalExpression}`;
-    console.log('Eval expression:', evalExpression);
+    const { source, specifier } = macroLocalToSpecifiers[macroLocal];
+    evalMetadata.snipEval = evalExpression;
+    evalMetadata.macroSource = source;
+    evalMetadata.macroSpecifier = specifier;
+    evalMetadata.macroSpecifierLocal = macroLocal;
+    console.log('Macro eval:', evalMetadata);
+    let evalResult;
+    // For nicer error messages; only used in eval string below
+    let macro = macroToSpecifierImpls;
+    evalExpression = `const ${macroLocal} = macro["${source}"]["${specifier}"]; ${evalExpression}`;
     try {
       // Running in a new closure so `macroLocal` doesn't conflict with us
-      { eval(evalExpression); }
+      { evalResult = eval(evalExpression); }
     } catch (err) {
       throw new Error(`Macro eval for:\n${evalExpression}\n${err}`);
     }
-    console.log('Returned code:', code);
-    // TODO: Remove? Let them put anything in?
-    if (typeof code !== 'string') {
-      throw new Error(`Macro eval returned ${typeof code} instead of a string`);
+    console.log('Macro eval result:', evalResult);
+    if (typeof evalResult !== 'string') {
+      throw new Error(`Macro eval returned ${typeof evalResult} instead of a string`);
     }
-    // TODO: Handle a string vs number as: typeof === string ? `"${c}"` : c;
-    insertClosed({ start, end, code: `"${code}"` });
+    Object.assign(evalMetadata, evalMetadataReset);
+    insertClosed({ start, end, replacement: evalResult });
   }
-  console.log('macroSpecifiersToLocals', macroSpecifiersToLocals);
-  console.log('macroLocalsToSpecifiers', macroLocalsToSpecifiers);
-  console.log('openIdentifierRanges', openMacroRangeStack);
-  console.log('closedIdentifierRanges', closedMacroRangeList);
+  console.log('macroSpecifierToLocals', macroSpecifierToLocals);
+  console.log('macroLocalToSpecifiers', macroLocalToSpecifiers);
+  console.log('openMacroRangeStack', openMacroRangeStack);
+  console.log('closedMacroRangeList', closedMacroRangeList);
 
-  // TODO: Use the closedIdentifierRanges entries to return macro-free source
-  return sourcecode;
+  // Work backwards to not mess up indices
+  for (const range of closedMacroRangeList.reverse()) {
+    code
+      = code.slice(0, range.start)
+      + range.replacement
+      + code.slice(range.end);
+  }
+  return code;
 };
 
+// TODO: Ohno. It's [,)
 /** @param {{ start: number, end: number }} x */
 const p = (x) => `[${x.start},${x.end}]`;
 
@@ -176,7 +206,7 @@ function intervalRangeListInsert(list, range) {
       continue;
     }
     // Overlapping before (ib) or after (ia) cur
-    throw new Error(`Overlaps of ${p(range)} with ${p(cursor)}`);
+    throw new Error(`Overlap of ${p(range)} with ${p(cursor)}`);
   }
   list.push(range);
 }
@@ -201,9 +231,11 @@ function intervalRangeListSplice(list, start, end) {
     if (cursor.start > end) break;
     throw new Error(`Splice partially cuts ${p(cursor)}`);
   }
+  /** @type {IntervalRange[]} */
+  const matches = [];
   // The indices are valid. It's safe to use [0]
-  const matches = removeIndices.map(ri => list.splice(ri, 1)[0]);
+  removeIndices.forEach(ri => matches.unshift(list.splice(ri, 1)[0]));
   return matches;
 }
 
-export { replaceMacros };
+export { replaceMacros, evalMetadata };

@@ -53,17 +53,16 @@ async function build() {
   // simplification for _all_ macros instead of doing it in only styletakeout
   const bundleB = replaceMacros(bundleA, [
     styletakeoutMacro({
-      // TODO: Name pending... depends if AST walking defers for object member
-      // expressions vs identifiers like "2021".
+      // XXX: This is CODE so use '"..."' to return strings and '...' for others
       importObjects: {
-        value: 2021,
+        value: '2021',
         decl: {
-          pageBackground: 'pageBackground',
-          textBackground: 'textBackground',
-          textColour: 'textColour',
+          pageBackground: '"pageBackground"',
+          textBackground: '"textBackground"',
+          textColour: '"textColour"',
         },
         colours: {
-          black: '#000',
+          black: '"#000"',
         },
         classes: {
           center: css`text-align: center;`,
@@ -73,9 +72,9 @@ async function build() {
           },
         },
         sizes: {
-          _03: '30px',
-          _04: '40px',
-          _05: '50px',
+          _03: '"30px"',
+          _04: '"40px"',
+          _05: '"50px"',
         },
       },
       outputFile: './dist/out.css',
@@ -85,7 +84,7 @@ async function build() {
     // sqlInjectionMacro({ ... }),
     // msMacro({ ... }),
   ]);
-  fs.writeFileSync('./dist/out-original.js', bundleA);
-  fs.writeFileSync('./dist/out-replaced-macros.js', bundleB);
+  fs.writeFileSync(path.join(__dirname, './dist/out-original.js'), bundleA);
+  fs.writeFileSync(path.join(__dirname, './dist/out-replaced-macros.js'), bundleB);
 }
 build();

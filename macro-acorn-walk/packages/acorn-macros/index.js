@@ -174,7 +174,7 @@ const replaceMacros = (code, macros, ast) => {
   console.log('closedMacroRangeList', closedMacroRangeList);
 
   // Work backwards to not mess up indices
-  for (const range of closedMacroRangeList) {
+  for (const range of closedMacroRangeList.reverse()) {
     code
       = code.slice(0, range.start)
       + range.replacement

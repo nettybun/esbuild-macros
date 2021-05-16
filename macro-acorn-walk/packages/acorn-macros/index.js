@@ -191,23 +191,23 @@ function intervalRangeListInsert(list, range) {
   if (range.start > range.end) {
     throw new Error('Given range start > end');
   }
-  for (let i = 0; i < list.length; i++) {
+  for (let i = list.length - 1; i >= 0; i--) {
     const cursor = list[i];
     // Entirely before cur
     if (range.end <= cursor.start) {
-      console.log(`${p(range)} < ${p(cursor)}; inserting`);
-      list.splice(i, 0, range);
-      return;
+      console.log(`${p(range)} <= ${p(cursor)}; next`);
+      continue;
     }
     // Entirely after cur
     if (range.start >= cursor.end) {
-      console.log(`${p(range)} > ${p(cursor)}; next`);
-      continue;
+      console.log(`${p(range)} >= ${p(cursor)}; inserting`);
+      list.splice(i + 1, 0, range);
+      return;
     }
     // Overlapping before (ib) or after (ia) cur
     throw new Error(`Overlap of ${p(range)} with ${p(cursor)}`);
   }
-  list.push(range);
+  list.unshift(range);
 }
 
 /** @param {IntervalRange[]} list; @param {number} start; @param {number} end */
@@ -215,23 +215,22 @@ function intervalRangeListSplice(list, start, end) {
   if (start > end) {
     throw new Error('Given range start > end');
   }
-  // Stored in reverse order so the splice() loop doesn't mess up indices later
   const removeIndices = [];
-  for (let i = 0; i < list.length; i++) {
+  for (let i = list.length - 1; i >= 0; i--) {
     const cursor = list[i];
     // OK
     if (cursor.start >= start && cursor.end <= end) {
-      removeIndices.unshift(i);
+      removeIndices.push(i);
       continue;
     }
     // Entirely before
-    if (cursor.end <= start) continue;
+    if (cursor.end <= start) break;
     // Entirely after. We're passed the range. Exit.
-    if (cursor.start >= end) break;
+    if (cursor.start >= end) continue;
     throw new Error(`Splice partially cuts ${p(cursor)}`);
   }
-  // The indices are valid. It's safe to use [0]
-  // This matches array is BACKWARDS
+  // The indices are valid so it's safe to use [0]
+  // This array is backwards since the for-loop is backwards
   const matches = removeIndices.map(ri => list.splice(ri, 1)[0]);
   return matches;
 }
